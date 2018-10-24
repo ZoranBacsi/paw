@@ -1,13 +1,16 @@
 <?php
 /**
  * @package AkeebaBackup
- * @copyright Copyright (c)2009-2014 Nicholas K. Dionysopoulos
+ * @copyright Copyright (c)2009-2016 Nicholas K. Dionysopoulos
  * @license GNU General Public License version 3, or later
  *
  */
 
 // Protect from unauthorized access
 defined('_JEXEC') or die();
+
+use Akeeba\Engine\Factory;
+use Akeeba\Engine\Platform;
 
 /**
  * Akeeba Backup Configuration Wizard view class
@@ -17,13 +20,11 @@ class AkeebaViewConfwiz extends F0FViewHtml
 {
 	public function onAdd($tpl = null)
 	{
-		$aeconfig = AEFactory::getConfiguration();
+		$aeconfig = Factory::getConfiguration();
 
 		// Load the Configuration Wizard Javascript file
+		AkeebaStrapper::addJSfile('media://com_akeeba/js/backup.js');
 		AkeebaStrapper::addJSfile('media://com_akeeba/js/confwiz.js');
-
-		// Add live help
-		AkeebaHelperIncludes::addHelp('confwiz');
 
 		$this->setLayout('wizard');
 

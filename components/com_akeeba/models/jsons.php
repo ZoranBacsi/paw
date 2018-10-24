@@ -1,7 +1,7 @@
 <?php
 /**
  * @package   AkeebaBackup
- * @copyright Copyright (c)2009-2014 Nicholas K. Dionysopoulos
+ * @copyright Copyright (c)2009-2016 Nicholas K. Dionysopoulos
  * @license   GNU General Public License version 3, or later
  *
  * @since     3.0
@@ -13,17 +13,15 @@ defined('_JEXEC') or die();
 // JSON API version number
 define('AKEEBA_JSON_API_VERSION', '320');
 
+use Akeeba\Engine\Factory;
+use Akeeba\Engine\Platform;
+use Akeeba\Engine\Util\Encrypt;
+
 /*
  * Short API version history:
  * 300	First draft. Basic backup working. Encryption semi-broken.
  * 316	Fixed download feature.
  */
-
-// Force load the AEUtilEncrypt class if it's Akeeba Backup Professional
-if (AKEEBA_PRO == 1)
-{
-	$dummy = new AEUtilEncrypt;
-}
 
 if (!defined('AKEEBA_BACKUP_ORIGIN'))
 {
@@ -32,27 +30,31 @@ if (!defined('AKEEBA_BACKUP_ORIGIN'))
 
 class AkeebaModelJsons extends F0FModel
 {
-	const    STATUS_OK = 200; // Normal reply
-	const    STATUS_NOT_AUTH = 401; // Invalid credentials
-	const    STATUS_NOT_ALLOWED = 403; // Not enough privileges
-	const    STATUS_NOT_FOUND = 404; // Requested resource not found
-	const    STATUS_INVALID_METHOD = 405; // Unknown JSON method
-	const    STATUS_ERROR = 500; // An error occurred
-	const    STATUS_NOT_IMPLEMENTED = 501; // Not implemented feature
-	const    STATUS_NOT_AVAILABLE = 503; // Remote service not activated
+	const    COM_AKEEBA_CPANEL_LBL_STATUS_OK               = 200; // Normal reply
 
-	const    ENCAPSULATION_RAW = 1; // Data in plain-text JSON
+	const    STATUS_NOT_AUTH         = 401; // Invalid credentials
+
+	const    STATUS_NOT_ALLOWED      = 403; // Not enough privileges
+
+	const    STATUS_NOT_FOUND        = 404; // Requested resource not found
+
+	const    STATUS_INVALID_METHOD   = 405; // Unknown JSON method
+
+	const    COM_AKEEBA_CPANEL_LBL_STATUS_ERROR            = 500; // An error occurred
+
+	const    STATUS_NOT_IMPLEMENTED  = 501; // Not implemented feature
+
+	const    STATUS_NOT_AVAILABLE    = 503; // Remote service not activated
+
+	const    ENCAPSULATION_RAW       = 1; // Data in plain-text JSON
+
 	const    ENCAPSULATION_AESCTR128 = 2; // Data in AES-128 stream (CTR) mode encrypted JSON
-	const    ENCAPSULATION_AESCTR256 = 3; // Data in AES-256 stream (CTR) mode encrypted JSON
-	const    ENCAPSULATION_AESCBC128 = 4; // Data in AES-128 standard (CBC) mode encrypted JSON
-	const    ENCAPSULATION_AESCBC256 = 5; // Data in AES-256 standard (CBC) mode encrypted JSON
 
-	private $json_errors = array(
-		'JSON_ERROR_NONE'      => 'No error has occurred (probably emtpy data passed)',
-		'JSON_ERROR_DEPTH'     => 'The maximum stack depth has been exceeded',
-		'JSON_ERROR_CTRL_CHAR' => 'Control character error, possibly incorrectly encoded',
-		'JSON_ERROR_SYNTAX'    => 'Syntax error'
-	);
+	const    ENCAPSULATION_AESCTR256 = 3; // Data in AES-256 stream (CTR) mode encrypted JSON
+
+	const    ENCAPSULATION_AESCBC128 = 4; // Data in AES-128 standard (CBC) mode encrypted JSON
+
+	const    ENCAPSULATION_AESCBC256 = 5; // Data in AES-256 standard (CBC) mode encrypted JSON
 
 	/** @var int The status code */
 	private $status = 200;
@@ -72,23 +74,33 @@ class AkeebaModelJsons extends F0FModel
 	public function execute($json)
 	{
 		// Check if we're activated
-		$enabled = AEPlatform::getInstance()->get_platform_configuration_option('frontend_enable', 0);
+		$enabled = Platform::getInstance()->get_platform_configuration_option('frontend_enable', 0);
+
+		// Is the Secret Key strong enough?
+		$validKey = $this->serverKey();
+
+		if (!\Akeeba\Engine\Util\Complexify::isStrongEnough($validKey, false))
+		{
+			$enabled = false;
+		}
+
 		if (!$enabled)
 		{
-			$this->data = 'Access denied';
-			$this->status = self::STATUS_NOT_AVAILABLE;
+			$this->data          = 'Access denied';
+			$this->status        = self::STATUS_NOT_AVAILABLE;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return $this->getResponse();
 		}
 
 		// Try to JSON-decode the request's input first
-		$request = @$this->json_decode($json, false);
+		$request = @json_decode($json, false);
+
 		if (is_null($request))
 		{
 			// Could not decode JSON
-			$this->data = 'JSON decoding error';
-			$this->status = self::STATUS_ERROR;
+			$this->data          = 'JSON decoding error';
+			$this->status        = self::COM_AKEEBA_CPANEL_LBL_STATUS_ERROR;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return $this->getResponse();
@@ -98,24 +110,27 @@ class AkeebaModelJsons extends F0FModel
 		// Request format: {encapsulation, body{ [key], [challenge], method, [data] }} or {[challenge], method, [data]}
 		if (isset($request->encapsulation) && isset($request->body))
 		{
-			if (!class_exists('AEUtilEncrypt') && !($request->encapsulation == self::ENCAPSULATION_RAW))
+			if (!class_exists('\\Akeeba\\Engine\\Util\\Encrypt') && !($request->encapsulation == self::ENCAPSULATION_RAW))
 			{
 				// Encrypted request found, but there is no encryption class available!
-				$this->data = 'This server does not support encrypted requests';
-				$this->status = self::STATUS_NOT_AVAILABLE;
+				$this->data          = 'This server does not support encrypted requests';
+				$this->status        = self::STATUS_NOT_AVAILABLE;
 				$this->encapsulation = self::ENCAPSULATION_RAW;
 
 				return $this->getResponse();
 			}
 
 			// Fully specified request
+			$body = '';
+
 			switch ($request->encapsulation)
 			{
 				case self::ENCAPSULATION_AESCBC128:
 					if (!isset($body))
 					{
 						$request->body = base64_decode($request->body);
-						$body = AEUtilEncrypt::AESDecryptCBC($request->body, $this->serverKey(), 128);
+						$body          = Factory::getEncryption()
+						                        ->AESDecryptCBC($request->body, $this->serverKey(), 128);
 					}
 					break;
 
@@ -123,21 +138,22 @@ class AkeebaModelJsons extends F0FModel
 					if (!isset($body))
 					{
 						$request->body = base64_decode($request->body);
-						$body = AEUtilEncrypt::AESDecryptCBC($request->body, $this->serverKey(), 256);
+						$body          = Factory::getEncryption()
+						                        ->AESDecryptCBC($request->body, $this->serverKey(), 256);
 					}
 					break;
 
 				case self::ENCAPSULATION_AESCTR128:
 					if (!isset($body))
 					{
-						$body = AEUtilEncrypt::AESDecryptCtr($request->body, $this->serverKey(), 128);
+						$body = Factory::getEncryption()->AESDecryptCtr($request->body, $this->serverKey(), 128);
 					}
 					break;
 
 				case self::ENCAPSULATION_AESCTR256:
 					if (!isset($body))
 					{
-						$body = AEUtilEncrypt::AESDecryptCtr($request->body, $this->serverKey(), 256);
+						$body = Factory::getEncryption()->AESDecryptCtr($request->body, $this->serverKey(), 256);
 					}
 					break;
 
@@ -149,10 +165,10 @@ class AkeebaModelJsons extends F0FModel
 			if (!empty($request->body))
 			{
 				$authorised = true;
-				$body = rtrim($body, chr(0));
+				$body       = rtrim($body, chr(0));
 
 				// Make sure it looks like a valid JSON string and is at least 12 characters (minimum valid message length)
-				if ((strlen($body) < 12) || (substr($body, 0, 1) != '{') || (substr($body, -1) != '}'))
+				if ((strlen($body) < 12) || (substr($body, 0, 1) != '{') || (substr($body, - 1) != '}'))
 				{
 					$authorised = false;
 				}
@@ -160,7 +176,7 @@ class AkeebaModelJsons extends F0FModel
 				// Try to JSON decode the body
 				if ($authorised)
 				{
-					$request->body = $this->json_decode($body);
+					$request->body = json_decode($body);
 
 					if (is_null($request->body))
 					{
@@ -184,8 +200,8 @@ class AkeebaModelJsons extends F0FModel
 				if (!$authorised)
 				{
 					// Decryption failed. The user is an impostor! Go away, hacker!
-					$this->data = 'Authentication failed';
-					$this->status = self::STATUS_NOT_AUTH;
+					$this->data          = 'Authentication failed';
+					$this->status        = self::STATUS_NOT_AUTH;
 					$this->encapsulation = self::ENCAPSULATION_RAW;
 
 					return $this->getResponse();
@@ -196,14 +212,14 @@ class AkeebaModelJsons extends F0FModel
 		{
 			// Partially specified request, assume RAW encapsulation
 			$request->encapsulation = self::ENCAPSULATION_RAW;
-			$request->body = $this->json_decode($request->body);
+			$request->body          = json_decode($request->body);
 		}
 		else
 		{
 			// Legacy request
 			$legacyRequest = clone $request;
-			$request = (object)array('encapsulation' => self::ENCAPSULATION_RAW, 'body' => null);
-			$request->body = $this->json_decode($legacyRequest);
+			$request       = (object) array('encapsulation' => self::ENCAPSULATION_RAW, 'body' => null);
+			$request->body = json_decode($legacyRequest);
 			unset($legacyRequest);
 		}
 
@@ -215,14 +231,14 @@ class AkeebaModelJsons extends F0FModel
 			if (isset($request->body->challenge))
 			{
 				list($challenge, $check) = explode(':', $request->body->challenge);
-				$crosscheck = strtolower(md5($challenge . $this->serverKey()));
+				$crosscheck    = strtolower(md5($challenge . $this->serverKey()));
 				$authenticated = ($crosscheck == $check);
 			}
 			if (!$authenticated)
 			{
 				// If the challenge was missing or it was wrong, don't let him go any further
-				$this->data = 'Invalid login credentials';
-				$this->status = self::STATUS_NOT_AUTH;
+				$this->data          = 'Invalid login credentials';
+				$this->status        = self::STATUS_NOT_AUTH;
 				$this->encapsulation = self::ENCAPSULATION_RAW;
 
 				return $this->getResponse();
@@ -235,7 +251,7 @@ class AkeebaModelJsons extends F0FModel
 		// Store the client-specified key, or use the server key if none specified and the request
 		// came encrypted.
 		$this->password = isset($request->body->key) ? $request->body->key : null;
-		$hasKey = (isset($request->body->key) || property_exists($request->body, 'key')) ? !is_null($request->body->key) : false;
+		$hasKey         = (isset($request->body->key) || property_exists($request->body, 'key')) ? !is_null($request->body->key) : false;
 		if (!$hasKey && ($request->encapsulation != self::ENCAPSULATION_RAW))
 		{
 			$this->password = $this->serverKey();
@@ -243,18 +259,18 @@ class AkeebaModelJsons extends F0FModel
 
 		// Does the specified method exist?
 		$method_exists = false;
-		$method_name = '';
+		$method_name   = '';
 		if (isset($request->body->method))
 		{
-			$method_name = ucfirst($request->body->method);
+			$method_name       = ucfirst($request->body->method);
 			$this->method_name = $method_name;
-			$method_exists = method_exists($this, '_api' . $method_name);
+			$method_exists     = method_exists($this, '_api' . $method_name);
 		}
 		if (!$method_exists)
 		{
 			// The requested method doesn't exist. Oops!
-			$this->data = "Invalid method $method_name";
-			$this->status = self::STATUS_INVALID_METHOD;
+			$this->data          = "Invalid method $method_name";
+			$this->status        = self::STATUS_INVALID_METHOD;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return $this->getResponse();
@@ -264,7 +280,7 @@ class AkeebaModelJsons extends F0FModel
 		$params = array();
 		if (isset($request->body->data))
 		{
-			$params = (array)$request->body->data;
+			$params = (array) $request->body->data;
 		}
 		$this->data = call_user_func(array($this, '_api' . $method_name), $params);
 
@@ -288,15 +304,7 @@ class AkeebaModelJsons extends F0FModel
 			)
 		);
 
-		switch ($this->method_name)
-		{
-			case 'Download':
-				$data = json_encode($this->data);
-				break;
-			default:
-				$data = $this->json_encode($this->data);
-				break;
-		}
+		$data = json_encode($this->data);
 
 		if (empty($this->password))
 		{
@@ -309,33 +317,25 @@ class AkeebaModelJsons extends F0FModel
 				break;
 
 			case self::ENCAPSULATION_AESCTR128:
-				$data = AEUtilEncrypt::AESEncryptCtr($data, $this->password, 128);
+				$data = Factory::getEncryption()->AESEncryptCtr($data, $this->password, 128);
 				break;
 
 			case self::ENCAPSULATION_AESCTR256:
-				$data = AEUtilEncrypt::AESEncryptCtr($data, $this->password, 256);
+				$data = Factory::getEncryption()->AESEncryptCtr($data, $this->password, 256);
 				break;
 
 			case self::ENCAPSULATION_AESCBC128:
-				$data = base64_encode(AEUtilEncrypt::AESEncryptCBC($data, $this->password, 128));
+				$data = base64_encode(Factory::getEncryption()->AESEncryptCBC($data, $this->password, 128));
 				break;
 
 			case self::ENCAPSULATION_AESCBC256:
-				$data = base64_encode(AEUtilEncrypt::AESEncryptCBC($data, $this->password, 256));
+				$data = base64_encode(Factory::getEncryption()->AESEncryptCBC($data, $this->password, 256));
 				break;
 		}
 
 		$response['body']['data'] = $data;
 
-		switch ($this->method_name)
-		{
-			case 'Download':
-				return '###' . json_encode($response) . '###';
-				break;
-			default:
-				return '###' . $this->json_encode($response) . '###';
-				break;
-		}
+		return '###' . json_encode($response) . '###';
 	}
 
 	private function serverKey()
@@ -344,7 +344,7 @@ class AkeebaModelJsons extends F0FModel
 
 		if (is_null($key))
 		{
-			$key = AEPlatform::getInstance()->get_platform_configuration_option('frontend_secret_word', '');
+			$key = Platform::getInstance()->get_platform_configuration_option('frontend_secret_word', '');
 		}
 
 		return $key;
@@ -354,7 +354,7 @@ class AkeebaModelJsons extends F0FModel
 	{
 		$edition = AKEEBA_PRO ? 'pro' : 'core';
 
-		return (object)array(
+		return (object) array(
 			'api'       => AKEEBA_JSON_API_VERSION,
 			'component' => AKEEBA_VERSION,
 			'date'      => AKEEBA_DATE,
@@ -365,18 +365,18 @@ class AkeebaModelJsons extends F0FModel
 	private function _apiGetProfiles()
 	{
 		require_once JPATH_SITE . '/administrator/components/com_akeeba/models/profiles.php';
-		$model = new AkeebaModelProfiles();
+		$model    = new AkeebaModelProfiles();
 		$profiles = $model->getProfilesList(true);
-		$ret = array();
+		$ret      = array();
 
 		if (count($profiles))
 		{
 			foreach ($profiles as $profile)
 			{
-				$temp = new stdClass();
-				$temp->id = $profile->id;
+				$temp       = new stdClass();
+				$temp->id   = $profile->id;
 				$temp->name = $profile->description;
-				$ret[] = $temp;
+				$ret[]      = $temp;
 			}
 		}
 
@@ -385,335 +385,114 @@ class AkeebaModelJsons extends F0FModel
 
 	private function _apiStartBackup($config)
 	{
+		$filter = \JFilterInput::getInstance();
+
 		// Get the passed configuration values
 		$defConfig = array(
 			'profile'     => 1,
 			'description' => '',
 			'comment'     => '',
 			'backupid'    => null,
+			'overrides'   => array(),
 		);
-		$config = array_merge($defConfig, $config);
 
-		foreach ($config as $key => $value)
-		{
-			if (!array_key_exists($key, $defConfig))
-			{
-				unset($config[$key]);
-			}
-		}
+		$defConfig = array_merge($defConfig, $config);
 
-		extract($config);
-
-		// Nuke the factory
-		AEFactory::nuke();
-
-		// Set the profile
-		$profile = (int)$profile;
-
-		if (!is_numeric($profile))
-		{
-			$profile = 1;
-		}
-
-		if (strtoupper($backupid) == '[DEFAULT]')
-		{
-			$db = JFactory::getDbo();
-			$query = $db->getQuery(true)
-						->select('MAX(' . $db->qn('id') . ')')
-						->from($db->qn('#__ak_stats'));
-
-			try
-			{
-				$maxId = $db->setQuery($query)->loadResult();
-			}
-			catch (Exception $e)
-			{
-				$maxId = 0;
-			}
-
-			$backupid = 'id' . ($maxId + 1);
-		}
-		elseif (empty($backupid))
-		{
-			$backupid = null;
-		}
+		$profile     = (int) $defConfig['profile'];
+		$profile     = max(1, $profile); // Make sure $profile is a positive integer >= 1
+		$description = $filter->clean($defConfig['description'], 'string');
+		$comment     = $filter->clean($defConfig['comment'], 'string');
+		$backupid    = $filter->clean($defConfig['backupid'], 'cmd');
+		$backupid    = empty($backupid) ? null : $backupid; // Otherwise the Engine doesn't set a backup ID
+		$overrides   = $filter->clean($defConfig['overrides'], 'array');
 
 		$session = JFactory::getSession();
 		$session->set('profile', $profile, 'akeeba');
-		AEPlatform::getInstance()->load_configuration($profile);
+		define('AKEEBA_PROFILE', $profile);
 
-		// Use the default description if none specified
-		if (empty($description))
-		{
-			JLoader::import('joomla.utilities.date');
-			$dateNow = new JDate();
-			/*
-			$user = JFactory::getUser();
-			$userTZ = $user->getParam('timezone',0);
-			$dateNow->setOffset($userTZ);
-			*/
-			$description = JText::_('BACKUP_DEFAULT_DESCRIPTION') . ' ' . $dateNow->format(JText::_('DATE_FORMAT_LC2'), true);
-		}
+		/**
+		 * DO NOT REMOVE!
+		 *
+		 * The Model will only try to load the configuration after nuking the factory. This causes Profile 1 to be
+		 * loaded first. Then it figures out it needs to load a different profile and it does – but the protected keys
+		 * are NOT replaced, meaning that certain configuration parameters are not replaced. Most notably, the chain.
+		 * This causes backups to behave weirdly. So, DON'T REMOVE THIS UNLESS WE REFACTOR THE MODEL.
+		 */
+		Platform::getInstance()->load_configuration($profile);
 
-		// Start the backup
-		AECoreKettenrad::reset(array(
-			'maxrun' => 0
-		));
+		/** @var AkeebaModelBackups $model */
+		$model = F0FModel::getTmpInstance('Backups', 'AkeebaModel');
+		$model->setState('tag', AKEEBA_BACKUP_ORIGIN);
+		$model->setState('backupid', $backupid);
+		$model->setState('description', $description);
+		$model->setState('comment', $comment);
 
-		AEUtilTempfiles::deleteTempFiles();
+		$array = $model->startBackup($overrides);
 
-		$tempVarsTag = AKEEBA_BACKUP_ORIGIN;
-		$tempVarsTag .= empty($$backupid) ? '' : ('.' . $$backupid);
-
-		AEUtilTempvars::reset($tempVarsTag);
-
-		$kettenrad = AECoreKettenrad::load(AKEEBA_BACKUP_ORIGIN, $backupid);
-		$kettenrad->setBackupId($backupid);
-
-		$options = array(
-			'description' => $description,
-			'comment'     => $comment,
-			'tag'         => AKEEBA_BACKUP_ORIGIN
-		);
-		$kettenrad->setup($options); // Setting up the engine
-		$array = $kettenrad->tick(); // Initializes the init domain
-		AECoreKettenrad::save(AKEEBA_BACKUP_ORIGIN, $backupid);
-
-		$array = $kettenrad->getStatusArray();
 		if ($array['Error'] != '')
 		{
 			// A backup error had occurred. Why are we here?!
-			$this->status = self::STATUS_ERROR;
+			$this->status        = self::COM_AKEEBA_CPANEL_LBL_STATUS_ERROR;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
-			return 'A backup error had occurred: ' . $array['Error'];
-		}
-		else
-		{
-			$statistics = AEFactory::getStatistics();
-			$array['BackupID'] = $statistics->getId();
-			$array['HasRun'] = 1; // Force the backup to go on.
-			return $array;
-		}
-	}
-
-	private function _apiStartSRPBackup($config)
-	{
-		// Get the passed configuration values
-		$defConfig = array(
-			'tag'           => 'restorepoint',
-			'type'          => 'component',
-			'name'          => 'akeeba',
-			'group'         => '',
-			'customdirs'    => array(),
-			'extraprefixes' => array(),
-			'customtables'  => array(),
-			'skiptables'    => array(),
-			'xmlname'       => '',
-		);
-		$config = array_merge($defConfig, $config);
-		foreach ($config as $key => $value)
-		{
-			if (!array_key_exists($key, $defConfig))
-			{
-				unset($config[$key]);
-			}
+			return 'A backup error has occurred: ' . $array['Error'];
 		}
 
-		// Fetch the extension's version information
-		require_once JPATH_ADMINISTRATOR . '/components/com_akeeba/assets/xmlslurp/xmlslurp.php';
-		$slurp = new LiveUpdateXMLSlurp();
-		$exttype = $config['type'];
-		switch ($exttype)
-		{
-			case 'component':
-				$extname = 'com_';
-				break;
-			case 'module':
-				$extname = 'mod_';
-				break;
-			case 'plugin':
-				$extname = 'plg_';
-				break;
-			case 'template':
-				$extname = 'tpl_';
-				break;
-		}
-		$extname .= $config['name'];
-		$info = $slurp->getInfo($extname, '');
+		$statistics        = Factory::getStatistics();
+		$array['BackupID'] = $statistics->getId();
 
-		$configOverrides = array(
-			'akeeba.basic.archive_name'                   => 'restore-point-[DATE]-[TIME]',
-			'akeeba.basic.backup_type'                    => 'full',
-			'akeeba.basic.backup_type'                    => 'full',
-			'akeeba.advanced.archiver_engine'             => 'jpa',
-			'akeeba.advanced.proc_engine'                 => 'none',
-			'akeeba.advanced.embedded_installer'          => 'none',
-			'engine.archiver.common.dereference_symlinks' => true, // hopefully no extension has symlinks inside its own directories...
-			'core.filters.srp.type'                       => $config['type'],
-			'core.filters.srp.group'                      => $config['group'],
-			'core.filters.srp.name'                       => $config['name'],
-			'core.filters.srp.customdirs'                 => $config['customdirs'],
-			'core.filters.srp.customfiles'                => $config['customfiles'],
-			'core.filters.srp.extraprefixes'              => $config['extraprefixes'],
-			'core.filters.srp.customtables'               => $config['customtables'],
-			'core.filters.srp.skiptables'                 => $config['skiptables'],
-			'core.filters.srp.langfiles'                  => $config['langfiles']
-		);
+		// Remote clients expect a boolean, not an integer.
+		$array['HasRun'] = ($array['HasRun'] === 0);
 
-		// Parse a local file stored in (backend)/assets/srpdefs/$extname.xml
-		JLoader::import('joomla.filesystem.file');
-		$filename = JPATH_COMPONENT_ADMINISTRATOR . '/assets/srpdefs/' . $extname . '.xml';
-		if (JFile::exists($filename))
-		{
-			$xml = JFactory::getXMLParser('simple');
-			if ($xml->loadFile($filename))
-			{
-				$extraConfig = $this->parseRestorePointXML($xml->document);
-				if ($extraConfig !== false)
-				{
-					$this->mergeSRPConfig($configOverrides, $extraConfig);
-				}
-			}
-			unset($xml);
-		}
-
-		// Parse the extension's manifest file and look for a <restorepoint> tag
-		if (!empty($info['xmlfile']))
-		{
-			$xml = JFactory::getXMLParser('simple');
-			if ($xml->loadFile($info['xmlfile']))
-			{
-				$restorepoint = $xml->document->getElementByPath('restorepoint');
-				if ($restorepoint)
-				{
-					$extraConfig = $this->parseRestorePointXML($restorepoint);
-					if ($extraConfig !== false)
-					{
-						$this->mergeSRPConfig($configOverrides, $extraConfig);
-					}
-				}
-			}
-			unset($restorepoint);
-			unset($xml);
-		}
-
-		// Create an SRP descriptor
-		$srpdescriptor = array(
-			'type'    => $config['type'],
-			'name'    => $config['name'],
-			'group'   => $config['group'],
-			'version' => $info['version'],
-			'date'    => $info['date']
-		);
-
-		// Set the description and comment
-		$description = "System Restore Point - " . JText::_($exttype) . ": $extname";
-		$comment = "---BEGIN SRP---\n" . json_encode($srpdescriptor) . "\n---END SRP---";
-		$jpskey = '';
-		$angiekey = '';
-
-		// Set a custom finalization action queue
-		$configOverrides['volatile.core.finalization.action_handlers'] = array(
-			new AEFinalizationSrpquotas()
-		);
-		$configOverrides['volatile.core.finalization.action_queue'] = array(
-			'remove_temp_files',
-			'update_statistics',
-			'update_filesizes',
-			'apply_srp_quotas'
-		);
-
-		// Apply the configuration overrides, please
-		$platform = AEPlatform::getInstance();
-		$platform->configOverrides = $configOverrides;
-
-		// Nuke the factory
-		AEFactory::nuke();
-
-		$profile = 1;
-		$session = JFactory::getSession();
-		$session->set('profile', $profile, 'akeeba');
-		AEPlatform::getInstance()->load_configuration($profile);
-
-		AEUtilTempvars::reset('restorepoint');
-
-		$kettenrad = AECoreKettenrad::load('restorepoint');
-		$options = array(
-			'description' => $description,
-			'comment'     => $comment,
-			'tag'         => 'restorepoint'
-		);
-		$kettenrad->setup($options); // Setting up the engine
-		$kettenrad->tick();
-		if (($kettenrad->getState() != 'running') && ($tag == 'restorepoint'))
-		{
-			$kettenrad->tick();
-		}
-		$kettenrad->resetWarnings(); // So as not to have duplicate warnings reports
-		AECoreKettenrad::save($tag);
-
-		$array = $kettenrad->getStatusArray();
-		if ($array['Error'] != '')
-		{
-			// A backup error had occurred. Why are we here?!
-			$this->status = self::STATUS_ERROR;
-			$this->encapsulation = self::ENCAPSULATION_RAW;
-
-			return 'A backup error had occurred: ' . $array['Error'];
-		}
-		else
-		{
-			$statistics = AEFactory::getStatistics();
-			$array['BackupID'] = $statistics->getId();
-			$array['HasRun'] = 1; // Force the backup to go on.
-			return $array;
-		}
+		return $array;
 	}
 
 	private function _apiStepBackup($config)
 	{
+		$filter = \JFilterInput::getInstance();
+
 		$defConfig = array(
 			'profile'  => null,
 			'tag'      => AKEEBA_BACKUP_ORIGIN,
 			'backupid' => null,
 		);
-		$config = array_merge($defConfig, $config);
-		extract($config);
+
+		$defConfig = array_merge($defConfig, $config);
+
+		$profile  = $filter->clean($defConfig['profile'], 'int');
+		$tag      = $filter->clean($defConfig['tag'], 'cmd');
+		$backupid = $filter->clean($defConfig['backupid'], 'cmd');
+
+		$session = JFactory::getSession();
 
 		// Try to set the profile from the setup parameters
 		if (!empty($profile))
 		{
-			$registry = AEFactory::getConfiguration();
-			$session = JFactory::getSession();
-			$session->set('profile', $profile, 'akeeba');
+			$session->set('profile', $profile);
+			define('AKEEBA_PROFILE', $profile);
 		}
 
-		$kettenrad = AECoreKettenrad::load($tag, $backupid);
-		$kettenrad->setBackupId($backupid);
+		/** @var AkeebaModelBackups $model */
+		$model = F0FModel::getTmpInstance('Backups', 'AkeebaModel');
 
-		$registry = AEFactory::getConfiguration();
-		$session = JFactory::getSession();
-		$session->set('profile', $registry->activeProfile, 'akeeba');
-
-		$array = $kettenrad->tick();
-		$ret_array = $kettenrad->getStatusArray();
-		$array['Progress'] = $ret_array['Progress'];
-		AECoreKettenrad::save($tag, $backupid);
+		$model->setState('tag', $tag);
+		$model->setState('backupid', $backupid);
+		$array = $model->stepBackup(false);
 
 		if ($array['Error'] != '')
 		{
 			// A backup error had occurred. Why are we here?!
-			$this->status = self::STATUS_ERROR;
+			$this->status        = self::COM_AKEEBA_CPANEL_LBL_STATUS_ERROR;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
-			return 'A backup error had occurred: ' . $array['Error'];
+			return 'A backup error has occurred: ' . $array['Error'];
 		}
-		elseif ($array['HasRun'] == false)
-		{
-			AEFactory::nuke();
-			AEUtilTempvars::reset();
-		}
+
+		$statistics        = Factory::getStatistics();
+		$array['BackupID'] = $statistics->getId();
+
+		// Remote clients expect a boolean, not an integer.
+		$array['HasRun'] = ($array['HasRun'] === 0);
 
 		return $array;
 	}
@@ -724,8 +503,10 @@ class AkeebaModelJsons extends F0FModel
 			'from'  => 0,
 			'limit' => 50
 		);
-		$config = array_merge($defConfig, $config);
-		extract($config);
+		$config    = array_merge($defConfig, $config);
+
+		$from  = $config['from'];
+		$limit = $config['limit'];
 
 		require_once JPATH_COMPONENT_ADMINISTRATOR . '/models/statistics.php';
 
@@ -741,25 +522,27 @@ class AkeebaModelJsons extends F0FModel
 		$defConfig = array(
 			'backup_id' => '0'
 		);
+
 		$config = array_merge($defConfig, $config);
-		extract($config);
+
+		$backup_id = $config['backup_id'];
 
 		// Get the basic statistics
-		$record = AEPlatform::getInstance()->get_statistics($backup_id);
+		$record = Platform::getInstance()->get_statistics($backup_id);
 
 		// Get a list of filenames
-		$backup_stats = AEPlatform::getInstance()->get_statistics($backup_id);
+		$backup_stats = Platform::getInstance()->get_statistics($backup_id);
 
 		// Backup record doesn't exist
 		if (empty($backup_stats))
 		{
-			$this->status = self::STATUS_NOT_FOUND;
+			$this->status        = self::STATUS_NOT_FOUND;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return 'Invalid backup record identifier';
 		}
 
-		$filenames = AEUtilStatistics::get_all_filenames($record);
+		$filenames = Factory::getStatistics()->get_all_filenames($record);
 
 		if (empty($filenames))
 		{
@@ -769,14 +552,14 @@ class AkeebaModelJsons extends F0FModel
 		else
 		{
 			$filedata = array();
-			$i = 0;
+			$i        = 0;
 
 			// Get file sizes per part
 			foreach ($filenames as $file)
 			{
-				$i++;
-				$size = @filesize($file);
-				$size = is_numeric($size) ? $size : 0;
+				$i ++;
+				$size       = @filesize($file);
+				$size       = is_numeric($size) ? $size : 0;
 				$filedata[] = array(
 					'part' => $i,
 					'name' => basename($file),
@@ -799,38 +582,42 @@ class AkeebaModelJsons extends F0FModel
 			'segment'    => 1,
 			'chunk_size' => 1
 		);
-		$config = array_merge($defConfig, $config);
-		extract($config);
+		$config    = array_merge($defConfig, $config);
 
-		$backup_stats = AEPlatform::getInstance()->get_statistics($backup_id);
+		$backup_id  = $config['backup_id'];
+		$part_id    = $config['part_id'];
+		$segment    = $config['segment'];
+		$chunk_size = $config['chunk_size'];
+
+		$backup_stats = Platform::getInstance()->get_statistics($backup_id);
 		if (empty($backup_stats))
 		{
 			// Backup record doesn't exist
-			$this->status = self::STATUS_NOT_FOUND;
+			$this->status        = self::STATUS_NOT_FOUND;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return 'Invalid backup record identifier';
 		}
-		$files = AEUtilStatistics::get_all_filenames($backup_stats);
+		$files = Factory::getStatistics()->get_all_filenames($backup_stats);
 
 		if ((count($files) < $part_id) || ($part_id <= 0))
 		{
 			// Invalid part
-			$this->status = self::STATUS_NOT_FOUND;
+			$this->status        = self::STATUS_NOT_FOUND;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return 'Invalid backup part';
 		}
 
-		$file = $files[$part_id - 1];
+		$file = $files[ $part_id - 1 ];
 
 		$filesize = @filesize($file);
-		$seekPos = $chunk_size * 1048756 * ($segment - 1);
+		$seekPos  = $chunk_size * 1048756 * ($segment - 1);
 
 		if ($seekPos > $filesize)
 		{
 			// Trying to seek past end of file
-			$this->status = self::STATUS_NOT_FOUND;
+			$this->status        = self::STATUS_NOT_FOUND;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return 'Invalid segment';
@@ -841,17 +628,17 @@ class AkeebaModelJsons extends F0FModel
 		if ($fp === false)
 		{
 			// Could not read file
-			$this->status = self::STATUS_ERROR;
+			$this->status        = self::COM_AKEEBA_CPANEL_LBL_STATUS_ERROR;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return 'Error reading backup archive';
 		}
 
 		rewind($fp);
-		if (fseek($fp, $seekPos, SEEK_SET) === -1)
+		if (fseek($fp, $seekPos, SEEK_SET) === - 1)
 		{
 			// Could not seek to position
-			$this->status = self::STATUS_ERROR;
+			$this->status        = self::COM_AKEEBA_CPANEL_LBL_STATUS_ERROR;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return 'Error reading specified segment';
@@ -862,7 +649,7 @@ class AkeebaModelJsons extends F0FModel
 		if ($buffer === false)
 		{
 			// Could not read
-			$this->status = self::STATUS_ERROR;
+			$this->status        = self::COM_AKEEBA_CPANEL_LBL_STATUS_ERROR;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return 'Error reading specified segment';
@@ -900,17 +687,19 @@ class AkeebaModelJsons extends F0FModel
 		$defConfig = array(
 			'backup_id' => 0
 		);
+
 		$config = array_merge($defConfig, $config);
-		extract($config);
+
+		$backup_id = $config['backup_id'];
 
 		require_once JPATH_COMPONENT_ADMINISTRATOR . '/models/statistics.php';
 
 		$model = new AkeebaModelStatistics();
-		$model->setState('id', (int)$backup_id);
+		$model->setState('id', (int) $backup_id);
 		$result = $model->delete();
 		if (!$result)
 		{
-			$this->status = self::STATUS_ERROR;
+			$this->status        = self::COM_AKEEBA_CPANEL_LBL_STATUS_ERROR;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return $model->getError();
@@ -926,17 +715,19 @@ class AkeebaModelJsons extends F0FModel
 		$defConfig = array(
 			'backup_id' => 0
 		);
+
 		$config = array_merge($defConfig, $config);
-		extract($config);
+
+		$backup_id = $config['backup_id'];
 
 		require_once JPATH_COMPONENT_ADMINISTRATOR . '/models/statistics.php';
 
 		$model = new AkeebaModelStatistics();
-		$model->setState('id', (int)$backup_id);
+		$model->setState('id', (int) $backup_id);
 		$result = $model->deleteFile();
 		if (!$result)
 		{
-			$this->status = self::STATUS_ERROR;
+			$this->status        = self::COM_AKEEBA_CPANEL_LBL_STATUS_ERROR;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 
 			return $model->getError();
@@ -952,11 +743,13 @@ class AkeebaModelJsons extends F0FModel
 		$defConfig = array(
 			'tag' => 'remote'
 		);
-		$config = array_merge($defConfig, $config);
-		extract($config);
 
-		$filename = AEUtilLogger::logName($tag);
-		$buffer = file_get_contents($filename);
+		$config = array_merge($defConfig, $config);
+
+		$tag = $config['tag'];
+
+		$filename = Factory::getLog()->getLogFilename($tag);
+		$buffer   = file_get_contents($filename);
 
 		switch ($this->encapsulation)
 		{
@@ -989,26 +782,29 @@ class AkeebaModelJsons extends F0FModel
 			'backup_id' => 0,
 			'part_id'   => 1
 		);
-		$config = array_merge($defConfig, $config);
-		extract($config);
 
-		$backup_stats = AEPlatform::getInstance()->get_statistics($backup_id);
+		$config = array_merge($defConfig, $config);
+
+		$backup_id = $config['backup_id'];
+		$part_id   = $config['part_id'];
+
+		$backup_stats = Platform::getInstance()->get_statistics($backup_id);
 		if (empty($backup_stats))
 		{
 			// Backup record doesn't exist
-			$this->status = self::STATUS_NOT_FOUND;
+			$this->status        = self::STATUS_NOT_FOUND;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 			@ob_end_clean();
 			header('HTTP/1.1 500 Invalid backup record identifier');
 			flush();
 			JFactory::getApplication()->close();
 		}
-		$files = AEUtilStatistics::get_all_filenames($backup_stats);
+		$files = Factory::getStatistics()->get_all_filenames($backup_stats);
 
 		if ((count($files) < $part_id) || ($part_id <= 0))
 		{
 			// Invalid part
-			$this->status = self::STATUS_NOT_FOUND;
+			$this->status        = self::STATUS_NOT_FOUND;
 			$this->encapsulation = self::ENCAPSULATION_RAW;
 			@ob_end_clean();
 			header('HTTP/1.1 500 Invalid backup part');
@@ -1016,7 +812,7 @@ class AkeebaModelJsons extends F0FModel
 			JFactory::getApplication()->close();
 		}
 
-		$filename = $files[$part_id - 1];
+		$filename = $files[ $part_id - 1 ];
 		@clearstatcache();
 
 		// For a certain unmentionable browser -- Thank you, Nooku, for the tip
@@ -1037,8 +833,8 @@ class AkeebaModelJsons extends F0FModel
 			}
 		}
 
-		$basename = @basename($filename);
-		$filesize = @filesize($filename);
+		$basename  = @basename($filename);
+		$filesize  = @filesize($filename);
 		$extension = strtolower(str_replace(".", "", strrchr($filename, ".")));
 
 		while (@ob_end_clean())
@@ -1078,7 +874,7 @@ class AkeebaModelJsons extends F0FModel
 		{
 			// If the filesize is reported, use 1M chunks for echoing the data to the browser
 			$blocksize = 1048756; //1M chunks
-			$handle = @fopen($filename, "r");
+			$handle    = @fopen($filename, "r");
 			// Now we need to loop through the file and echo out chunks of file data
 			if ($handle !== false)
 			{
@@ -1101,215 +897,5 @@ class AkeebaModelJsons extends F0FModel
 		}
 		flush();
 		JFactory::getApplication()->close();
-	}
-
-	/**
-	 * Encodes a variable to JSON using PEAR's Services_JSON
-	 *
-	 * @param mixed $value   The value to encode
-	 * @param int   $options Encoding preferences flags
-	 *
-	 * @return string The JSON-encoded string
-	 */
-	private function json_encode($value, $options = 0)
-	{
-		$flags = SERVICES_JSON_LOOSE_TYPE;
-		if ($options & JSON_FORCE_OBJECT)
-		{
-			$flags = 0;
-		}
-		$encoder = new Akeeba_Services_JSON($flags);
-
-		return $encoder->encode($value);
-	}
-
-	/**
-	 * Decodes a JSON string to a variable using PEAR's Services_JSON
-	 *
-	 * @param string $value The JSON-encoded string
-	 * @param bool   $assoc True to return an associative array instead of an object
-	 *
-	 * @return mixed The decoded variable
-	 */
-	private function json_decode($value, $assoc = false)
-	{
-		$flags = 0;
-		if ($assoc)
-		{
-			$flags = SERVICES_JSON_LOOSE_TYPE;
-		}
-		$decoder = new Akeeba_Services_JSON($flags);
-
-		return $decoder->decode($value);
-	}
-
-	private function parseRestorePointXML($xml)
-	{
-		if (!count($xml->children()))
-		{
-			return false;
-		}
-
-		$ret = array();
-
-		// 1. Group name -- core.filters.srp.group
-		$group = $xml->getElementByPath('group');
-		if ($group)
-		{
-			$ret['core.filters.srp.group'] = $group->data();
-		}
-
-		// 2. Custom dirs -- core.filters.srp.customdirs
-		$customdirs = $xml->getElementByPath('customdirs');
-		if ($customdirs)
-		{
-			$stack = array();
-			if (count($customdirs->children()))
-			{
-				$children = $customdirs->children();
-				foreach ($children as $child)
-				{
-					if ($child->name() == 'dir')
-					{
-						$stack[] = $child->data();
-					}
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.customdirs'] = $stack;
-			}
-		}
-
-		// 3. Extra prefixes -- core.filters.srp.extraprefixes
-		$extraprefixes = $xml->getElementByPath('extraprefixes');
-		if ($extraprefixes)
-		{
-			$stack = array();
-			if (count($extraprefixes->children()))
-			{
-				$children = $extraprefixes->children();
-				foreach ($children as $child)
-				{
-					if ($child->name() == 'prefix')
-					{
-						$stack[] = $child->data();
-					}
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.extraprefixes'] = $stack;
-			}
-		}
-
-		// 4. Custom tables -- core.filters.srp.customtables
-		$customtables = $xml->getElementByPath('customtables');
-		if ($customtables)
-		{
-			$stack = array();
-			if (count($customtables->children()))
-			{
-				$children = $customtables->children();
-				foreach ($children as $child)
-				{
-					if ($child->name() == 'table')
-					{
-						$stack[] = $child->data();
-					}
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.customtables'] = $stack;
-			}
-		}
-
-		// 5. Skip tables -- core.filters.srp.skiptables
-		$skiptables = $xml->getElementByPath('skiptables');
-		if ($skiptables)
-		{
-			$stack = array();
-			if (count($skiptables->children()))
-			{
-				$children = $skiptables->children();
-				foreach ($children as $child)
-				{
-					if ($child->name() == 'table')
-					{
-						$stack[] = $child->data();
-					}
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.skiptables'] = $stack;
-			}
-		}
-
-		// 6. Language files -- core.filters.srp.langfiles
-		$langfiles = $xml->getElementByPath('langfiles');
-		if ($langfiles)
-		{
-			$stack = array();
-			if (count($langfiles->children()))
-			{
-				$children = $langfiles->children();
-				foreach ($children as $child)
-				{
-					if ($child->name() == 'lang')
-					{
-						$stack[] = $child->data();
-					}
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.langfiles'] = $stack;
-			}
-		}
-
-		// 7. Custom files -- core.filters.srp.customfiles
-		$customfiles = $xml->getElementByPath('customfiles');
-		if ($customfiles)
-		{
-			$stack = array();
-			if (count($customfiles->children()))
-			{
-				$children = $customfiles->children();
-				foreach ($children as $child)
-				{
-					if ($child->name() == 'file')
-					{
-						$stack[] = $child->data();
-					}
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.customfiles'] = $stack;
-			}
-		}
-
-		if (empty($ret))
-		{
-			return false;
-		}
-
-		return $ret;
-	}
-
-	private function mergeSRPConfig(&$config, $extraConfig)
-	{
-		foreach ($config as $key => $value)
-		{
-			if (array_key_exists($key, $extraConfig))
-			{
-				if (is_array($value) && is_array($extraConfig[$key]))
-				{
-					$config[$key] = array_merge($extraConfig[$key], $value);
-				}
-			}
-		}
 	}
 }

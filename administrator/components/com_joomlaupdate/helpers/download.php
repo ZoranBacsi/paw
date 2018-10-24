@@ -2,7 +2,7 @@
 /**
  * @package     Joomla.Administrator
  * @subpackage  com_joomlaupdate
- * @copyright   Copyright (C) 2005 - 2013 Open Source Matters, Inc. All rights reserved.
+ * @copyright   Copyright (C) 2005 - 2014 Open Source Matters, Inc. All rights reserved.
  * @license     GNU General Public License version 2 or later; see LICENSE.txt
  */
 
@@ -420,7 +420,7 @@ class AdmintoolsHelperDownload
 			// Connect the FTP client
 			jimport('joomla.client.ftp');
 			$ftp = &JFTP::getInstance(
-				$ftpOptions['host'], $ftpOptions['port'], null,
+				$ftpOptions['host'], $ftpOptions['port'], array(),
 				$ftpOptions['user'], $ftpOptions['pass']
 			);
 		}

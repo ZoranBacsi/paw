@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright	Copyright (C) 2005 - 2013 Open Source Matters, Inc. All rights reserved.
+ * @copyright	Copyright (C) 2005 - 2014 Open Source Matters, Inc. All rights reserved.
  * @license		GNU General Public License version 2 or later; see LICENSE.txt
  */
 
@@ -53,7 +53,7 @@ class plgSystemLanguageFilter extends JPlugin
 				self::$lang_codes 	= JLanguageHelper::getLanguages('lang_code');
 				self::$default_lang = JComponentHelper::getParams('com_languages')->get('site', 'en-GB');
 				self::$default_sef 	= self::$lang_codes[self::$default_lang]->sef;
-				self::$homes		= MultilangstatusHelper::getHomes();
+				self::$homes		= MultilangstatusHelper::getHomepages();
 
 				$user = JFactory::getUser();
 				$levels = $user->getAuthorisedViewLevels();
@@ -246,7 +246,7 @@ class plgSystemLanguageFilter extends JPlugin
 					// redirect if sef does not exists and language is not the default one
 					if (!isset(self::$sefs[$sef]) && $lang_code != self::$default_lang)
 					{
-						$sef = isset(self::$lang_codes[$lang_code]) ? self::$lang_codes[$lang_code]->sef : self::$default_sef;
+						$sef = isset(self::$lang_codes[$lang_code]) && empty($path) ? self::$lang_codes[$lang_code]->sef : self::$default_sef;
 						$uri->setPath($sef . '/' . $path);
 
 						if ($app->getCfg('sef_rewrite')) {
@@ -493,7 +493,17 @@ class plgSystemLanguageFilter extends JPlugin
 								} else {
 									$link = JRoute::_($item->link.'&Itemid='.$associations[$language->lang_code].'&lang='.$language->sef);
 								}
-								$doc->addHeadLink($server . $link, 'alternate', 'rel', array('hreflang' => $language->lang_code));
+
+								// Check if language is the default site language and remove url language code is on
+								if ($language->sef == self::$default_sef && $this->params->get('remove_default_prefix') == '1')
+								{
+									$relLink = preg_replace('|/' . $language->sef . '/|', '/', $link, 1);
+									$doc->addHeadLink($server . $relLink, 'alternate', 'rel', array('hreflang' => $language->lang_code));
+								}
+								else
+								{
+									$doc->addHeadLink($server . $link, 'alternate', 'rel', array('hreflang' => $language->lang_code));
+								}
 							}
 						}
 					}
@@ -512,7 +522,17 @@ class plgSystemLanguageFilter extends JPlugin
 							} else {
 								$link = JRoute::_($item->link.'&Itemid='.$item->id.'&lang='.$language->sef);
 							}
-							$doc->addHeadLink($server . JRoute::_($item->link.'&Itemid='.$item->id.'&lang='.$language->sef), 'alternate', 'rel', array('hreflang' => $language->lang_code));
+
+							// Check if language is the default site language and remove url language code is on
+							if ($language->sef == self::$default_sef && $this->params->get('remove_default_prefix') == '1')
+							{
+								$relLink = preg_replace('|/' . $language->sef . '/|', '/', $link, 1);
+								$doc->addHeadLink($server . $relLink, 'alternate', 'rel', array('hreflang' => $language->lang_code));
+							}
+							else
+							{
+								$doc->addHeadLink($server . $link, 'alternate', 'rel', array('hreflang' => $language->lang_code));
+							}
 						}
 					}
 				}

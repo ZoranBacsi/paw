@@ -1,7 +1,7 @@
 <?php
 /**
  * @package   AkeebaBackup
- * @copyright Copyright (c)2009-2014 Nicholas K. Dionysopoulos
+ * @copyright Copyright (c)2009-2016 Nicholas K. Dionysopoulos
  * @license   GNU General Public License version 3, or later
  *
  * @since     1.3
@@ -9,6 +9,8 @@
 
 // Protect from unauthorized access
 defined('_JEXEC') or die();
+
+use Akeeba\Engine\Platform;
 
 /**
  * The Backup controller class
@@ -55,7 +57,7 @@ class AkeebaControllerBackup extends AkeebaControllerDefault
 				$session = JFactory::getSession();
 				$session->set('profile', $newProfile, 'akeeba');
 
-				AEPlatform::getInstance()->load_configuration($newProfile);
+				Platform::getInstance()->load_configuration($newProfile);
 			}
 
 			// Deactivate the menus
@@ -66,20 +68,6 @@ class AkeebaControllerBackup extends AkeebaControllerDefault
 			$model->setState('ajax', $this->input->get('ajax', '', 'cmd'));
 			$model->setState('autostart', $this->input->get('autostart', 0, 'int'));
 
-			$srpinfo = array(
-				'tag'           => $this->input->get('tag', 'backend', 'cmd'),
-				'type'          => $this->input->get('type', '', 'cmd'),
-				'name'          => $this->input->get('name', '', 'cmd'),
-				'group'         => $this->input->get('group', '', 'cmd'),
-				'customdirs'    => $this->input->get('customdirs', array(), 'array', 2),
-				'extraprefixes' => $this->input->get('extraprefixes', array(), 'array', 2),
-				'customtables'  => $this->input->get('customtables', array(), 'array', 2),
-				'skiptables'    => $this->input->get('skiptables', array(), 'array', 2),
-				'xmlname'       => $this->input->get('xmlname', '', 'string')
-			);
-
-			$model->setState('srpinfo', $srpinfo);
-
 			$description = $this->input->get('description', null, 'string', 2);
 
 			if (!empty($description))
@@ -87,7 +75,7 @@ class AkeebaControllerBackup extends AkeebaControllerDefault
 				$model->setState('description', $description);
 			}
 
-			$comment = $this->input->get('comment', null, 'string', 2);
+			$comment = $this->input->get('comment', null, 'html', 2);
 
 			if (!empty($comment))
 			{
@@ -97,7 +85,7 @@ class AkeebaControllerBackup extends AkeebaControllerDefault
 			$model->setState('jpskey', $this->input->get('jpskey', '', 'raw', 2));
 			$model->setState('angiekey', $this->input->get('angiekey', '', 'raw', 2));
 			$model->setState('returnurl', $this->input->get('returnurl', '', 'raw', 2));
-			$model->setState('backupid', $this->input->get('backupid', null, 'string', 2));
+			$model->setState('backupid', $this->input->get('backupid', null, 'cmd'));
 		}
 
 		return $result;
@@ -105,16 +93,18 @@ class AkeebaControllerBackup extends AkeebaControllerDefault
 
 	public function ajax()
 	{
+		/** @var AkeebaModelBackups $model */
 		$model = $this->getThisModel();
 
 		$model->setState('profile', $this->input->get('profileid', -10, 'int'));
 		$model->setState('ajax', $this->input->get('ajax', '', 'cmd'));
 		$model->setState('description', $this->input->get('description', '', 'string'));
-		$model->setState('comment', $this->input->get('comment', '', 'default', 'string', 4));
+		$model->setState('comment', $this->input->get('comment', '', 'html', 2));
 		$model->setState('jpskey', $this->input->get('jpskey', '', 'raw', 2));
 		$model->setState('angiekey', $this->input->get('angiekey', '', 'raw', 2));
-		$model->setState('backupid', $this->input->get('backupid', null, 'string', 2));
+		$model->setState('backupid', $this->input->get('backupid', null, 'cmd'));
 		$model->setState('tag', $this->input->get('tag', 'backend', 'cmd'));
+		$model->setState('errorMessage', $this->input->getString('errorMessage', ''));
 
 		// System Restore Point backup state variables
 		$model->setState('type', strtolower($this->input->get('type', '', 'cmd')));
@@ -135,6 +125,7 @@ class AkeebaControllerBackup extends AkeebaControllerDefault
 
 		@ob_end_clean();
 		header('Content-type: text/plain');
+		header('Connection: close');
 		echo '###' . json_encode($ret_array) . '###';
 		flush();
 		JFactory::getApplication()->close();

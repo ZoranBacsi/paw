@@ -1,13 +1,16 @@
 <?php
 /**
  * @package AkeebaBackup
- * @copyright Copyright (c)2009-2014 Nicholas K. Dionysopoulos
+ * @copyright Copyright (c)2009-2016 Nicholas K. Dionysopoulos
  * @license GNU General Public License version 3, or later
  *
  * @since 1.3
  */
 
 defined('_JEXEC') or die();
+
+use Akeeba\Engine\Factory;
+use Akeeba\Engine\Platform;
 
 /**
  * A class with utility functions to get the backup readiness status,
@@ -54,11 +57,11 @@ class AkeebaHelperStatus extends JObject
 	{
 		parent::__construct();
 
-		$status = AEUtilQuirks::get_folder_status();
+		$status = Factory::getConfigurationChecks()->getFolderStatus();
 		$this->outputWritable = $this->status['output'];
 		$this->tempWritable = $this->status['temporary'];
-		$this->status = AEUtilQuirks::get_status();
-		$this->quirks = AEUtilQuirks::get_quirks();
+		$this->status = Factory::getConfigurationChecks()->getShortStatus();
+		$this->quirks = Factory::getConfigurationChecks()->getDetailedStatus();
 	}
 
 	/**
@@ -68,20 +71,20 @@ class AkeebaHelperStatus extends JObject
 	 */
 	public function getStatusCell()
 	{
-		$status = AEUtilQuirks::get_status();
-		$quirks = AEUtilQuirks::get_quirks();
+		$status = Factory::getConfigurationChecks()->getShortStatus();
+		$quirks = Factory::getConfigurationChecks()->getDetailedStatus();
 
 		if($status && empty($quirks))
 		{
-			$html = '<p class="alert alert-success">'.JText::_('STATUS_OK').'</p>';
+			$html = '<p class="alert alert-success">'.JText::_('COM_AKEEBA_CPANEL_LBL_STATUS_OK').'</p>';
 		}
 		elseif($status && !empty($quirks))
 		{
-			$html = '<p class="alert">'.JText::_('STATUS_WARNING').'</p>';
+			$html = '<p class="alert">'.JText::_('COM_AKEEBA_CPANEL_LBL_STATUS_WARNING').'</p>';
 		}
 		else
 		{
-			$html = '<p class="alert alert-error">'.JText::_('STATUS_ERROR').'</p>';
+			$html = '<p class="alert alert-error">'.JText::_('COM_AKEEBA_CPANEL_LBL_STATUS_ERROR').'</p>';
 		}
 		return $html;
 	}
@@ -94,7 +97,7 @@ class AkeebaHelperStatus extends JObject
 	public function getQuirksCell($onlyErrors = false)
 	{
 		$html = '';
-		$quirks = AEUtilQuirks::get_quirks();
+		$quirks = Factory::getConfigurationChecks()->getDetailedStatus();
 
 		if(!empty($quirks))
 		{
@@ -107,7 +110,7 @@ class AkeebaHelperStatus extends JObject
 		}
 		else
 		{
-			$html = '<p>'.JText::_('QNONE').'</p>';
+			$html = '<p>'.JText::_('COM_AKEEBA_CPANEL_WARNING_QNONE').'</p>';
 		}
 
 		return $html;
@@ -119,7 +122,7 @@ class AkeebaHelperStatus extends JObject
 	 */
 	public function hasQuirks()
 	{
-		$quirks = AEUtilQuirks::get_quirks();
+		$quirks = Factory::getConfigurationChecks()->getDetailedStatus();
 		return !empty($quirks);
 	}
 

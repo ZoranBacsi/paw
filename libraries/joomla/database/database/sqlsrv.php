@@ -3,7 +3,7 @@
  * @package     Joomla.Platform
  * @subpackage  Database
  *
- * @copyright   Copyright (C) 2005 - 2013 Open Source Matters, Inc. All rights reserved.
+ * @copyright   Copyright (C) 2005 - 2014 Open Source Matters, Inc. All rights reserved.
  * @license     GNU General Public License version 2 or later; see LICENSE
  */
 
@@ -1133,7 +1133,6 @@ class JDatabaseSQLSrv extends JDatabase
 
 		$sql = preg_replace('/\sFROM\s/i', $rowNumberText, $sql, 1);
 		$sql = 'SELECT * FROM (' . $sql . ') _myResults WHERE RowNumber BETWEEN ' . $start . ' AND ' . $end;
-		echo $sql;
 
 		return $sql;
 	}

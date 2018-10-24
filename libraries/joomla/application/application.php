@@ -3,7 +3,7 @@
  * @package     Joomla.Platform
  * @subpackage  Application
  *
- * @copyright   Copyright (C) 2005 - 2013 Open Source Matters, Inc. All rights reserved.
+ * @copyright   Copyright (C) 2005 - 2014 Open Source Matters, Inc. All rights reserved.
  * @license     GNU General Public License version 2 or later; see LICENSE
  */
 
@@ -669,6 +669,9 @@ class JApplication extends JObject
 		$authenticate = JAuthentication::getInstance();
 		$response = $authenticate->authenticate($credentials, $options);
 
+		// Import the user plugin group.
+		JPluginHelper::importPlugin('user');
+
 		if ($response->status === JAuthentication::STATUS_SUCCESS)
 		{
 			// validate that the user should be able to login (different to being authenticated)
@@ -703,9 +706,6 @@ class JApplication extends JObject
 					}
 				}
 			}
-
-			// Import the user plugin group.
-			JPluginHelper::importPlugin('user');
 
 			// OK, the credentials are authenticated and user is authorised.  Lets fire the onLogin event.
 			$results = $this->triggerEvent('onUserLogin', array((array) $response, $options));

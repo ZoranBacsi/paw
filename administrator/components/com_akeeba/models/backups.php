@@ -1,7 +1,7 @@
 <?php
 /**
  * @package   AkeebaBackup
- * @copyright Copyright (c)2009-2014 Nicholas K. Dionysopoulos
+ * @copyright Copyright (c)2009-2016 Nicholas K. Dionysopoulos
  * @license   GNU General Public License version 3, or later
  * @since     3.2.5
  */
@@ -9,187 +9,43 @@
 // Protect from unauthorized access
 defined('_JEXEC') or die();
 
+use Akeeba\Engine\Factory;
+use Akeeba\Engine\Platform;
+use Akeeba\Engine\Util\PushMessages;
+use Psr\Log\LogLevel;
+
 /**
  * The back-end backup model
  */
 class AkeebaModelBackups extends F0FModel
 {
 	/**
-	 * Starts or step a backup process
+	 * Starts or step a backup process. Set the state variable "ajax" to the task you want to execute OR call the
+	 * relevant public method directly.
 	 *
-	 * @return array An Akeeba Engine return array
+	 * @return  array  An Akeeba Engine return array
 	 */
 	public function runBackup()
 	{
 		$ret_array = array();
 
 		$ajaxTask = $this->getState('ajax');
-		$tag = $this->getState('tag');
-		$backupId = $this->getState('backupid');
 
 		switch ($ajaxTask)
 		{
+			// Start a new backup
 			case 'start':
-				// Description is passed through a strict filter which removes HTML
-				$description = $this->getState('description');
-				// The comment is passed through the Safe HTML filter (note: use 2 to force no filtering)
-				$comment = $this->getState('comment');
-				$jpskey = $this->getState('jpskey');
-				$angiekey = $this->getState('angiekey');
-
-				if (is_null($backupId))
-				{
-					$db = $this->getDbo();
-					$query = $db->getQuery(true)
-						->select('MAX(' . $db->qn('id') . ')')
-						->from($db->qn('#__ak_stats'));
-
-					try
-					{
-						$maxId = $db->setQuery($query)->loadResult();
-					}
-					catch (Exception $e)
-					{
-						$maxId = 0;
-					}
-
-					$backupId = 'id' . ($maxId + 1);
-				}
-
-				// Try resetting the engine
-				AECoreKettenrad::reset(array(
-					'maxrun' => 0
-				));
-
-				// Remove any stale memory files left over from the previous step
-
-				if (empty($tag))
-				{
-					$tag = AEPlatform::getInstance()->get_backup_origin();
-				}
-
-				$tempVarsTag = $tag;
-				$tempVarsTag .= empty($backupId) ? '' : ('.' . $backupId);
-
-				AEUtilTempvars::reset($tempVarsTag);
-
-				$kettenrad = AECoreKettenrad::load($tag, $backupId);
-				$kettenrad->setBackupId($backupId);
-
-				// Take care of System Restore Point setup
-				if ($tag == 'restorepoint')
-				{
-					// Fetch the extension's version information
-					require_once JPATH_COMPONENT_ADMINISTRATOR . '/assets/xmlslurp/xmlslurp.php';
-
-					$slurp = new LiveUpdateXMLSlurp();
-					$exttype = $this->getState('type');
-
-					switch ($exttype)
-					{
-						case 'component':
-							$extname = 'com_';
-							break;
-						case 'file':
-							$extname = 'file';
-							break;
-						case 'library':
-							$extname = 'lib_';
-							break;
-						case 'module':
-							$extname = 'mod_';
-							break;
-						case 'package':
-							$extname = 'pkg_';
-							break;
-						case 'plugin':
-							$extname = 'plg_';
-							break;
-						case 'template':
-							$extname = 'tpl_';
-							break;
-						default:
-							$extname = '';
-							break;
-					}
-
-					$extname .= $this->getState('name');
-					$info = $slurp->getInfo($extname, '');
-
-					// Get the configOverrides for this extension
-					$configOverrides = $this->getConfigOverridesForSRP($extname, $info);
-
-					// Create an SRP descriptor
-					$srpdescriptor = array(
-						'type'    => $this->getState('type'),
-						'name'    => $this->getState('name'),
-						'group'   => $this->getState('group'),
-						'version' => $info['version'],
-						'date'    => $info['date']
-					);
-
-					// Set the description and comment
-					$description = "System Restore Point - " . JText::_($exttype) . ": $extname";
-					$comment = "---BEGIN SRP---\n" . json_encode($srpdescriptor) . "\n---END SRP---";
-					$jpskey = '';
-					$angiekey = '';
-
-					// Set a custom finalization action queue
-					$configOverrides['volatile.core.finalization.action_handlers'] = array(
-						new AEFinalizationSrpquotas()
-					);
-					$configOverrides['volatile.core.finalization.action_queue'] = array(
-						'remove_temp_files',
-						'update_statistics',
-						'update_filesizes',
-						'apply_srp_quotas'
-					);
-
-					// Apply the configuration overrides, please
-					$platform = AEPlatform::getInstance();
-					$platform->configOverrides = $configOverrides;
-				}
-				$options = array(
-					'description' => $description,
-					'comment'     => $comment,
-					'jpskey'      => $jpskey,
-					'angiekey'    => $angiekey,
-				);
-				$kettenrad->setup($options);
-				$kettenrad->tick();
-
-				if (($kettenrad->getState() != 'running') && ($tag == 'restorepoint'))
-				{
-					AECoreKettenrad::save($tag, $backupId);
-					$kettenrad = AECoreKettenrad::load($tag, $backupId);
-					$kettenrad->setBackupId($backupId);
-					$kettenrad->tick();
-				}
-
-				$ret_array = $kettenrad->getStatusArray();
-				$kettenrad->resetWarnings(); // So as not to have duplicate warnings reports
-				AECoreKettenrad::save($tag, $backupId);
+				$ret_array = $this->startBackup();
 				break;
 
+			// Step through a backup
 			case 'step':
-				$kettenrad = AECoreKettenrad::load($tag, $backupId);
-				$kettenrad->setBackupId($backupId);
+				$ret_array = $this->stepBackup();
+				break;
 
-				$kettenrad->tick();
-				$ret_array = $kettenrad->getStatusArray();
-				$kettenrad->resetWarnings(); // So as not to have duplicate warnings reports
-				AECoreKettenrad::save($tag, $backupId);
-
-				if ($ret_array['HasRun'] == 1)
-				{
-					// Clean up
-					AEFactory::nuke();
-
-					$tempVarsTag = $tag;
-					$tempVarsTag .= empty($backupId) ? '' : ('.' . $backupId);
-
-					AEUtilTempvars::reset($tempVarsTag);
-				}
+			// Send a push notification for backup failure
+			case 'pushFail':
+				$this->pushFail();
 				break;
 
 			default:
@@ -200,406 +56,348 @@ class AkeebaModelBackups extends F0FModel
 	}
 
 	/**
-	 * Gets the configuration overrides for a System Restore Point backup
+	 * Starts a new backup.
 	 *
-	 * @param   string $extname     The extension shortname, e.g. com_foobar
-	 * @param   array  $info        The structure returned by Live Update's XMLSlurp class
-	 * @param   array  $extraConfig Extra configuration that will be merged with the default one
+	 * State variables expected
+	 * backupid		The ID of the backup. If none is set up we will create a new one in the form id123
+	 * tag			The backup tag, e.g. "frontend". If none is set up we'll get it through the Platform.
+	 * description	The description of the backup (optional)
+	 * comment      The comment of the backup (optional)
+	 * jpskey       JPS password
+	 * angiekey     ANGIE password
 	 *
-	 * @return array
+	 * @param   array  $overrides  Configuration overrides
+	 *
+	 * @return  array  An Akeeba Engine return array
 	 */
-	private function getConfigOverridesForSRP($extname, $info, $extraConfig = array())
+	public function startBackup(array $overrides = array())
 	{
-		// Get the defaults from the URL
-		$config = array(
-			'akeeba.basic.archive_name'                   => 'restore-point-[DATE]-[TIME]',
-			'akeeba.basic.backup_type'                    => 'full',
-			'akeeba.advanced.archiver_engine'             => 'jpa',
-			'akeeba.advanced.proc_engine'                 => 'none',
-			'akeeba.advanced.embedded_installer'          => 'none',
-			'engine.archiver.common.dereference_symlinks' => true, // hopefully no extension has symlinks inside its own directories...
-			'core.filters.srp.type'                       => array($this->getState('type')),
-			'core.filters.srp.group'                      => array($this->getState('group')),
-			'core.filters.srp.name'                       => array($this->getState('name')),
-			'core.filters.srp.customdirs'                 => $this->getState('customdirs'),
-			'core.filters.srp.customfiles'                => $this->getState('customfiles'),
-			'core.filters.srp.extraprefixes'              => $this->getState('extraprefixes'),
-			'core.filters.srp.customtables'               => $this->getState('customtables'),
-			'core.filters.srp.skiptables'                 => $this->getState('skiptables'),
-			'core.filters.srp.langfiles'                  => $this->getState('langfiles')
+		// Get information from the session
+		$tag         = $this->getState('tag', null, 'string');
+		$backupId    = $this->getState('backupid', null, 'string');
+		$description = $this->getState('description', '', 'string');
+		$comment     = $this->getState('comment', '', 'html');
+		$jpskey      = $this->getState('jpskey', null, 'raw');
+		$angiekey    = $this->getState('angiekey', null, 'raw');
+
+		// Try to get a backup ID if none is provided
+		if (is_null($backupId))
+		{
+			$db = $this->getDbo();
+			$query = $db->getQuery(true)
+			            ->select('MAX(' . $db->qn('id') . ')')
+			            ->from($db->qn('#__ak_stats'));
+
+			try
+			{
+				$maxId = $db->setQuery($query)->loadResult();
+			}
+			catch (Exception $e)
+			{
+				$maxId = 0;
+			}
+
+			$backupId = 'id' . ($maxId + 1);
+		}
+
+		// Use the default description if none specified
+		if (empty($description))
+		{
+			JLoader::import('joomla.utilities.date');
+			$dateNow     = new JDate();
+			$description =
+				JText::_('COM_AKEEBA_BACKUP_DEFAULT_DESCRIPTION') . ' ' .
+				$dateNow->format(JText::_('DATE_FORMAT_LC2'), true);
+		}
+
+		// Try resetting the engine
+		Factory::resetState(array(
+			'maxrun' => 0
+		));
+
+		// Remove any stale memory files left over from the previous step
+		if (empty($tag))
+		{
+			$tag = Platform::getInstance()->get_backup_origin();
+		}
+
+		$tempVarsTag = $tag;
+		$tempVarsTag .= empty($backupId) ? '' : ('.' . $backupId);
+
+		Factory::getFactoryStorage()->reset($tempVarsTag);
+		Factory::nuke();
+		Factory::getLog()->log(LogLevel::DEBUG, " -- Resetting Akeeba Engine factory ($tag.$backupId)");
+		Platform::getInstance()->load_configuration();
+
+		// Should I apply any configuration overrides?
+		if (is_array($overrides) && !empty($overrides))
+		{
+			$config        = Factory::getConfiguration();
+			$protectedKeys = $config->getProtectedKeys();
+			$config->resetProtectedKeys();
+
+			foreach ($overrides as $k => $v)
+			{
+				$config->set($k, $v);
+			}
+
+			$config->setProtectedKeys($protectedKeys);
+		}
+
+		// Check if there are critical issues preventing the backup
+		if (!Factory::getConfigurationChecks()->getShortStatus())
+		{
+			$configChecks = Factory::getConfigurationChecks()->getDetailedStatus();
+
+			foreach ($configChecks as $checkItem)
+			{
+				if ($checkItem['severity'] != 'critical')
+				{
+					continue;
+				}
+
+				return array(
+					'HasRun' => 0,
+					'Error'  => 'Failed configuration check Q' . $checkItem['code'] . ': ' . $checkItem['description'] . '. Please refer to https://www.akeebabackup.com/documentation/warnings/q' . $checkItem['code'] . '.html for more information and troubleshooting instructions.',
+				);
+			}
+		}
+
+		// Set up Kettenrad
+		$options = array(
+			'description' => $description,
+			'comment'     => $comment,
+			'jpskey'      => $jpskey,
+			'angiekey'    => $angiekey,
 		);
 
-		if ($extraConfig)
+		if (is_null($jpskey))
 		{
-			$config = array_merge($config, $extraConfig);
+			unset ($options['jpskey']);
 		}
 
-		$type = end($config['core.filters.srp.type']);
-		reset($config['core.filters.srp.type']);
-
-		// Parse a local file stored in (backend)/assets/srpdefs/$extname.xml
-		JLoader::import('joomla.filesystem.file');
-		$filename = JPATH_COMPONENT_ADMINISTRATOR . '/assets/srpdefs/' . $extname . '.xml';
-
-		if (JFile::exists($filename))
+		if (is_null($angiekey))
 		{
-			$xml = new SimpleXMLElement($filename, LIBXML_NONET, true);
-
-			if ($xml instanceof SimpleXMLElement)
-			{
-				$extraConfig = $this->parseRestorePointXML($xml);
-
-				if ($extraConfig !== false)
-				{
-					$this->mergeSRPConfig($config, $extraConfig);
-				}
-			}
-
-			unset($xml);
+			unset ($options['angiekey']);
 		}
 
-		// Parse the extension's manifest file and look for a <restorepoint> tag
-		if (!empty($info['xmlfile']))
+		$kettenrad = Factory::getKettenrad();
+		$kettenrad->setBackupId($backupId);
+		$kettenrad->setup($options);
+
+		$this->setState('backupid', $backupId);
+
+		// Run the first backup step. We need to run tick() twice
+		/**
+		 * We need to run tick() twice in the first backup step.
+		 *
+		 * The first tick() will reset the backup engine and start a new backup. However, no backup record is created
+		 * at this point. This means that Factory::loadState() cannot find a backup record, therefore it cannot read
+		 * the backup profile being used, therefore it will assume it's profile #1.
+		 *
+		 * The second tick() creates the backup record without doing much else, fixing this issue.
+		 *
+		 * THEREFORE, DO NOT REMOVE THE SECOND tick(), IT IS THERE ON PURPOSE!
+		 */
+		$kettenrad->tick(); // Do not remove the first call to tick()!!!
+		$kettenrad->tick(); // Do not remove the second call to tick()!!!
+		$ret_array = $kettenrad->getStatusArray();
+
+		// So as not to have duplicate warnings reports
+		$kettenrad->resetWarnings();
+
+		try
 		{
-			$xml = new SimpleXMLElement($info['xmlfile'], LIBXML_NONET, true);
-
-			if ($xml instanceof SimpleXMLElement)
-			{
-				$restorepoint = $xml->restorepoint;
-				$extraConfig = false;
-
-				if (count($restorepoint))
-				{
-					$extraConfig = $this->parseRestorePointXML($restorepoint);
-				}
-				// Do our automatic logic only if there aren't any restorepoints inside the manifest
-				elseif ($type == 'file')
-				{
-					$extraConfig = $this->parseFileXML($xml);
-				}
-				elseif ($type == 'library')
-				{
-					$extraConfig = $this->parseLibXML($xml);
-				}
-				elseif (in_array($type, array('component', 'module', 'plugin')))
-				{
-					$extraConfig = $this->parseMediaXML($xml);
-				}
-				elseif ($type == 'package')
-				{
-					$extraConfig = $this->parsePackageXML($xml);
-
-					// While creating a SRP for packages I have to exclude the package itself,
-					// so I'm going to unset these variables from the main $config variable
-					$config['core.filters.srp.type'] = array();
-					$config['core.filters.srp.name'] = array();
-					$config['core.filters.srp.group'] = array();
-				}
-
-				if ($extraConfig !== false)
-				{
-					$this->mergeSRPConfig($config, $extraConfig);
-				}
-			}
-
-			unset($restorepoint);
-			unset($xml);
+			Factory::saveState($tag, $backupId);
+		}
+		catch (\RuntimeException $e)
+		{
+			$ret_array['Error'] = $e->getMessage();
 		}
 
-		return $config;
+		return $ret_array;
 	}
 
 	/**
-	 * Parses the Restore Point definition XML
+	 * Steps through a backup.
 	 *
-	 * @param SimpleXMLElement $xml
+	 * State variables expected (MUST be set):
+	 * backupid		The ID of the backup.
+	 * tag			The backup tag, e.g. "frontend".
+	 * profile      (optional) The profile ID of the backup.
 	 *
-	 * @return boolean|array False if there is no restore point data set, or a list of SRP overrides
+	 * @param   bool  $requireBackupId  Should the backup ID be required?
+	 *
+	 * @return  array  An Akeeba Engine return array
 	 */
-	private function parseRestorePointXML(SimpleXMLElement $xml)
+	public function stepBackup($requireBackupId = true)
 	{
-		if (!count($xml))
+		// Get the tag. If not specified use the AKEEBA_BACKUP_ORIGIN constant.
+		$tag      = $this->getState('tag', null, 'string');
+
+		if (is_null($tag) && defined('AKEEBA_BACKUP_ORIGIN'))
 		{
-			return false;
+			$tag = AKEEBA_BACKUP_ORIGIN;
 		}
 
-		$ret = array();
+		// Get the Backup ID. If not specified use the AKEEBA_BACKUP_ID constant.
+		$backupId = $this->getState('backupid', null, 'string');
 
-		// 1. Group name -- core.filters.srp.group
-		if (count($xml->group))
+		if (is_null($backupId) && defined('AKEEBA_BACKUP_ID'))
 		{
-			$ret['core.filters.srp.group'] = (string)($xml->group);
+			$backupId = AKEEBA_BACKUP_ID;
 		}
 
-		// 2. Custom dirs -- core.filters.srp.customdirs
-		$customdirs = $xml->customdirs;
-		if (count($customdirs))
+		// Get the profile from the session, the AKEEBA_PROFILE constant or the model state – in this order
+		$session = JFactory::getSession();
+		$profile = $session->get('profile', null);
+		$profile = defined('AKEEBA_PROFILE') ? AKEEBA_PROFILE : $profile;
+		$profile = $this->getState('profile', $profile, 'int');
+		$profile = max(0, (int) $profile);
+
+		if (empty($profile))
 		{
-			$stack = array();
-			$children = $customdirs->children();
-			foreach ($children as $child)
-			{
-				if ($child->getName() == 'dir')
-				{
-					$stack[] = (string)$child;
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.customdirs'] = $stack;
-			}
+			$profile = $this->getLastBackupProfile($tag, $backupId);
 		}
 
-		// 3. Extra prefixes -- core.filters.srp.extraprefixes
-		$extraprefixes = $xml->extraprefixes;
-		if (count($extraprefixes))
+		// Set the active profile
+		$session->set('profile', $profile);
+
+		if (!defined('AKEEBA_PROFILE'))
 		{
-			$stack = array();
-			$children = $extraprefixes->children();
-			foreach ($children as $child)
-			{
-				if ($child->getName() == 'prefix')
-				{
-					$stack[] = (string)$child;
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.extraprefixes'] = $stack;
-			}
+			define('AKEEBA_PROFILE', $profile);
 		}
 
-		// 4. Custom tables -- core.filters.srp.customtables
-		$customtables = $xml->customtables;
-		if (count($customtables))
+		// Run a backup step
+		$ret_array = array(
+			'Error' => '',
+		);
+
+		try
 		{
-			$stack = array();
-			$children = $customtables->children();
-			foreach ($children as $child)
-			{
-				if ($child->getName() == 'table')
-				{
-					$stack[] = (string)$child;
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.customtables'] = $stack;
-			}
+			// Reload the configuration
+			Platform::getInstance()->load_configuration($profile);
+
+			// Load the engine from storage
+			Factory::loadState($tag, $backupId, $requireBackupId);
+
+			// Set the backup ID and run a backup step
+			$kettenrad = Factory::getKettenrad();
+			$kettenrad->setBackupId($backupId);
+			$kettenrad->tick();
+			$ret_array = $kettenrad->getStatusArray();
+
+			// Prevent duplicate reporting of warnings
+			$kettenrad->resetWarnings();
+		}
+		catch (\Exception $e)
+		{
+			$ret_array['Error'] = $e->getMessage();
 		}
 
-		// 5. Skip tables -- core.filters.srp.skiptables
-		$skiptables = $xml->skiptables;
-		if (count($skiptables))
+		try
 		{
-			$stack = array();
-			$children = $skiptables->children();
-			foreach ($children as $child)
+			if (empty($ret_array['Error']) && ($ret_array['HasRun'] != 1))
 			{
-				if ($child->getName() == 'table')
-				{
-					$stack[] = (string)$child;
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.skiptables'] = $stack;
+				Factory::saveState($tag, $backupId);
 			}
 		}
-
-		// 6. Language files -- core.filters.srp.langfiles
-		$langfiles = $xml->langfiles;
-		if (count($langfiles))
+		catch (\RuntimeException $e)
 		{
-			$stack = array();
-			$children = $langfiles->children();
-			foreach ($children as $child)
-			{
-				if ($child->getName() == 'lang')
-				{
-					$stack[] = (string)$child;
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.langfiles'] = $stack;
-			}
+			$ret_array['Error'] = $e->getMessage();
 		}
 
-		// 7. Custom files -- core.filters.srp.customfiles
-		$customfiles = $xml->customfiles;
-		if (count($customfiles))
+		if (!empty($ret_array['Error']) || ($ret_array['HasRun'] == 1))
 		{
-			$stack = array();
-			$children = $customfiles->children();
-			foreach ($children as $child)
-			{
-				if ($child->getName() == 'file')
-				{
-					$stack[] = (string)$child;
-				}
-			}
-			if (!empty($stack))
-			{
-				$ret['core.filters.srp.customfiles'] = $stack;
-			}
+			// Clean up
+			Factory::nuke();
+
+			$tempVarsTag = $tag;
+			$tempVarsTag .= empty($backupId) ? '' : ('.' . $backupId);
+
+			Factory::getFactoryStorage()->reset($tempVarsTag);
 		}
 
-		if (empty($ret))
-		{
-			return false;
-		}
-
-		return $ret;
+		return $ret_array;
 	}
 
 	/**
-	 * Parses an XML file of type file
+	 * Send a push notification for a failed backup
 	 *
-	 * @param   SimpleXMLElement $xml XML resource
+	 * State variables expected (MUST be set):
+	 * errorMessage  The error message
 	 *
-	 * @return boolean|array False if there is no restore point data set, or a list of SRP overrides
+	 * @return  void
 	 */
-	private function parseFileXML(SimpleXMLElement $xml)
+	public function pushFail()
 	{
-		$return = false;
+		$errorMessage = $this->getState('errorMessage');
 
-		$elements = $xml->xpath('//files');
+		$platform = Platform::getInstance();
+		$key      = 'COM_AKEEBA_PUSH_ENDBACKUP_FAIL_BODY_WITH_MESSAGE';
 
-		foreach ($elements as $element)
+		if (empty($errorMessage))
 		{
-			$target = (string)$element->attributes()->target;
-			$filenames = (array)$element->filename;
-			$filenames = array_merge($filenames, (array)$element->file);
-			$folders = (array)$element->folder;
-			$destination = $target ? rtrim($target, '/') . '/' : '';
-
-			foreach ($filenames as $filename)
-			{
-				$return['core.filters.srp.customfiles'][] = $destination . (string)$filename;
-			}
-
-			foreach ($folders as $folder)
-			{
-				$return['core.filters.srp.customdirs'][] = $destination . (string)$folder;
-			}
+			$key = 'COM_AKEEBA_PUSH_ENDBACKUP_FAIL_BODY';
 		}
 
-		return $return;
+		$pushSubject = sprintf(
+			$platform->translate('COM_AKEEBA_PUSH_ENDBACKUP_FAIL_SUBJECT'),
+			$platform->get_site_name(),
+			$platform->get_host()
+		);
+		$pushDetails = sprintf(
+			$platform->translate($key),
+			$platform->get_site_name(),
+			$platform->get_host(),
+			$errorMessage
+		);
+
+		$push = new PushMessages();
+		$push->message($pushSubject, $pushDetails);
 	}
 
 	/**
-	 * Parses an XML file of type file
+	 * Get the profile used to take the last backup for the specified tag
 	 *
-	 * @param   SimpleXMLElement $xml XML resource
+	 * @param   string  $tag       The backup tag a.k.a. backup origin (backend, frontend, json, ...)
+	 * @param   string  $backupId  (optional) The Backup ID
 	 *
-	 * @return boolean|array False if there is no restore point data set, or a list of SRP overrides
+	 * @return  int  The profile ID of the latest backup taken with the specified tag / backup ID
 	 */
-	private function parseLibXML(SimpleXMLElement $xml)
+	protected function getLastBackupProfile($tag, $backupId = null)
 	{
-		$return = false;
+		$filters  = array(
+			array('field' => 'tag', 'value' => $tag)
+		);
 
-		$elements = $xml->xpath('//files');
-
-		foreach ($elements as $element)
+		if (!empty($backupId))
 		{
-			$target = (string)$element->attributes()->folder;
-			$filenames = (array)$element->filename;
-			$filenames = array_merge($filenames, (array)$element->file);
-			$folders = (array)$element->folder;
-			$destination = $target ? 'libraries/' . rtrim($target, '/') . '/' : 'libraries/';
-
-			foreach ($filenames as $filename)
-			{
-				$return['core.filters.srp.customfiles'][] = $destination . (string)$filename;
-			}
-
-			foreach ($folders as $folder)
-			{
-				$return['core.filters.srp.customdirs'][] = $destination . (string)$folder;
-			}
+			$filters[] = array('field' => 'backupid', 'value' => $backupId);
 		}
 
-		return $return;
-	}
+		$statList = Platform::getInstance()->get_statistics_list(array(
+				'filters'  => $filters,
+				'order' => array(
+					'by' => 'id', 'order' => 'DESC'
+				)
+			)
+		);
 
-	private function parseMediaXML(SimpleXMLElement $xml)
-	{
-		$return = false;
-
-		$elements = $xml->xpath('media');
-
-		foreach ($elements as $element)
+		if (is_array($statList))
 		{
-			$filenames = (array)$element->filename;
-			$folders = (array)$element->folder;
-			$destination = (string)$element->attributes()->folder . '/' . (string)$element->attributes()->destination;
-			$destination = rtrim($destination, '/') . '/';
+			$stat = array_pop($statList);
 
-			foreach ($filenames as $filename)
-			{
-				$return['core.filters.srp.customfiles'][] = $destination . (string)$filename;
-			}
-
-			foreach ($folders as $folder)
-			{
-				$return['core.filters.srp.customdirs'][] = $destination . (string)$folder;
-			}
+			return (int) $stat['profile_id'];
 		}
 
-		return $return;
-	}
-
-	private function parsePackageXML(SimpleXMLElement $xml)
-	{
-		$return = array();
-
-		$files = (array)$xml->xpath('//file');
-		$slurp = new LiveUpdateXMLSlurp();
-
-		foreach ($files as $file)
+		// Backup entry not found. If backupId was specified, try without a backup ID
+		if (!empty($backupId))
 		{
-			$group = '';
-			$type = (string)$file->attributes()->type;
-			$extension = (string)$file->attributes()->id;
-			$info = $slurp->getInfo($extension, '');
-
-			if ($type == 'plugin')
-			{
-				$group = (string)$file->attributes()->group;
-			}
-
-			if ($type == 'module')
-			{
-				$group = (string)$file->attributes()->client;
-			}
-
-			$return['core.filters.srp.name'][] = $extension;
-			$return['core.filters.srp.type'][] = $type;
-			$return['core.filters.srp.group'][] = $group;
-
-			$return = $this->getConfigOverridesForSRP($extension, $info, $return);
+			return $this->getLastBackupProfile($tag);
 		}
 
-		if (!$return)
-		{
-			$return = false;
-		}
-
-		return $return;
-	}
-
-	private function mergeSRPConfig(&$config, $extraConfig)
-	{
-		foreach ($config as $key => $value)
-		{
-			if (array_key_exists($key, $extraConfig))
-			{
-				if (is_array($value) && is_array($extraConfig[$key]))
-				{
-					$config[$key] = array_merge($extraConfig[$key], $value);
-				}
-			}
-		}
+		// Else, return the default backup profile
+		return 1;
 	}
 }

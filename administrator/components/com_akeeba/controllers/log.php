@@ -1,7 +1,7 @@
 <?php
 /**
  * @package   AkeebaBackup
- * @copyright Copyright (c)2009-2014 Nicholas K. Dionysopoulos
+ * @copyright Copyright (c)2009-2016 Nicholas K. Dionysopoulos
  * @license   GNU General Public License version 3, or later
  *
  * @since     1.3
@@ -9,6 +9,8 @@
 
 // Protect from unauthorized access
 defined('_JEXEC') or die();
+
+use Akeeba\Engine\Platform;
 
 /**
  * Log view controller class
@@ -48,7 +50,7 @@ class AkeebaControllerLog extends AkeebaControllerDefault
 		$model = $this->getThisModel();
 		$model->setState('tag', $tag);
 
-		AEPlatform::getInstance()->load_configuration(AEPlatform::getInstance()->get_active_profile());
+		Platform::getInstance()->load_configuration(Platform::getInstance()->get_active_profile());
 
 		parent::display($cachable, $urlparams);
 	}
@@ -64,7 +66,7 @@ class AkeebaControllerLog extends AkeebaControllerDefault
 		$model = $this->getThisModel();
 		$model->setState('tag', $tag);
 
-		AEPlatform::getInstance()->load_configuration(AEPlatform::getInstance()->get_active_profile());
+		Platform::getInstance()->load_configuration(Platform::getInstance()->get_active_profile());
 
 		parent::display();
 
@@ -74,7 +76,7 @@ class AkeebaControllerLog extends AkeebaControllerDefault
 
 	public function download($cachable = false, $urlparams = false)
 	{
-		AEPlatform::getInstance()->load_configuration(AEPlatform::getInstance()->get_active_profile());
+		Platform::getInstance()->load_configuration(Platform::getInstance()->get_active_profile());
 
 		$tag = $this->input->get('tag', null, 'cmd');
 		if (empty($tag))

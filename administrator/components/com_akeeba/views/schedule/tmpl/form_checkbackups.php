@@ -1,11 +1,21 @@
 <?php
+/**
+ * @package   AkeebaBackup
+ * @copyright Copyright (c)2009-2016 Nicholas K. Dionysopoulos
+ * @license   GNU General Public License version 3, or later
+ * @since     3.2.5
+ */
 
 defined('_JEXEC') or die;
 ?>
 <div class="tab-pane fade" id="absTabCheckBackups">
-<p>
-    <?php echo JText::_('COM_AKEEBA_SCHEDULE_LBL_HEADERINFO'); ?>
-</p>
+    <h3>
+        <?php echo JText::_('COM_AKEEBA_SCHEDULE_LBL_CHECK_BACKUPS'); ?>
+    </h3>
+
+    <p>
+        <?php echo JText::_('COM_AKEEBA_SCHEDULE_LBL_HEADERINFO'); ?>
+    </p>
 
 <fieldset>
     <legend><?php echo JText::_('COM_AKEEBA_SCHEDULE_LBL_CLICRON') ?></legend>

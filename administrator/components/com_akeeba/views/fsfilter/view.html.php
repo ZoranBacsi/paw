@@ -1,7 +1,7 @@
 <?php
 /**
  * @package AkeebaBackup
- * @copyright Copyright (c)2009-2014 Nicholas K. Dionysopoulos
+ * @copyright Copyright (c)2009-2016 Nicholas K. Dionysopoulos
  * @license GNU General Public License version 3, or later
  *
  * @since 3.0
@@ -9,6 +9,9 @@
 
 // Protect from unauthorized access
 defined('_JEXEC') or die();
+
+use Akeeba\Engine\Factory;
+use Akeeba\Engine\Platform;
 
 /**
  * View class for the Filesystem Filters
@@ -18,29 +21,31 @@ class AkeebaViewFsfilter extends F0FViewHtml
 {
 	public function onBrowse($tpl = null)
 	{
+        AkeebaStrapper::addJSfile('media://com_akeeba/js/fsfilter.js');
+
 		$model = $this->getModel();
 		$task = $model->getState('browse_task', 'normal');
 
 		// Add custom submenus
 		$toolbar = F0FToolbar::getAnInstance($this->input->get('option','com_foobar','cmd'), $this->config);
 		$toolbar->appendLink(
-			JText::_('FILTERS_LABEL_NORMALVIEW'),
-			JURI::base().'index.php?option=com_akeeba&view=fsfilter&task=normal',
+			JText::_('COM_AKEEBA_FILEFILTERS_LABEL_NORMALVIEW'),
+			JUri::base().'index.php?option=com_akeeba&view=fsfilter&task=normal',
 			($task == 'normal')
 		);
 		$toolbar->appendLink(
-			JText::_('FILTERS_LABEL_TABULARVIEW'),
-			JURI::base().'index.php?option=com_akeeba&view=fsfilter&task=tabular',
+			JText::_('COM_AKEEBA_FILEFILTERS_LABEL_TABULARVIEW'),
+			JUri::base().'index.php?option=com_akeeba&view=fsfilter&task=tabular',
 			($task == 'tabular')
 		);
 
-		$media_folder = JURI::base().'../media/com_akeeba/';
+		$media_folder = JUri::base().'../media/com_akeeba/';
 
 		// Get the root URI for media files
 		$this->mediadir = AkeebaHelperEscape::escapeJS($media_folder.'theme/');
 
 		// Get a JSON representation of the available roots
-		$filters = AEFactory::getFilters();
+		$filters = Factory::getFilters();
 		$root_info = $filters->getInclusions('dir');
 		$roots = array();
 		$options = array();
@@ -63,7 +68,7 @@ class AkeebaViewFsfilter extends F0FViewHtml
 			}
 		}
 		$site_root = $roots[0];
-		$attribs = 'onchange="akeeba_active_root_changed();"';
+		$attribs = 'onchange="akeeba.Fsfilters.activeRootChanged();"';
 		$this->root_select = JHTML::_('select.genericlist', $options, 'root', $attribs, 'value', 'text', $site_root, 'active_root');
 		$this->roots = $roots;
 
@@ -90,18 +95,15 @@ class AkeebaViewFsfilter extends F0FViewHtml
 				break;
 		}
 
-		// Add live help
-		AkeebaHelperIncludes::addHelp('fsfilter');
-
 		// Get profile ID
-		$profileid = AEPlatform::getInstance()->get_active_profile();
+		$profileid = Platform::getInstance()->get_active_profile();
 		$this->profileid = $profileid;
 
 		// Get profile name
 		$pmodel = F0FModel::getAnInstance('Profiles', 'AkeebaModel');
 		$pmodel->setId($profileid);
 		$profile_data = $pmodel->getItem();
-		$this->profilename = $profile_data->description;
+		$this->profilename = $this->escape($profile_data->description);
 
 		return true;
 	}

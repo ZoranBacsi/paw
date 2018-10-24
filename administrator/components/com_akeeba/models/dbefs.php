@@ -4,10 +4,13 @@
  *
  * @license GNU General Public License, version 2 or later
  * @author Nicholas K. Dionysopoulos
- * @copyright Copyright 2006-2014 Nicholas K. Dionysopoulos
+ * @copyright Copyright 2006-2016 Nicholas K. Dionysopoulos
  * @since 1.3
  */
 defined('_JEXEC') or die();
+
+use Akeeba\Engine\Factory;
+use Akeeba\Engine\Platform;
 
 /**
  * Database Table filter Model class
@@ -24,13 +27,13 @@ class AkeebaModelDbefs extends F0FModel
 	public function make_listing($root)
 	{
 		// Get database inclusion filters
-		$filters = AEFactory::getFilters();
+		$filters = Factory::getFilters();
 		$database_list = $filters->getInclusions('db');
 
 		// Load the database object for the selected database
 		$config = $database_list[$root];
 		$config['user'] = $config['username'];
-		$db = AEFactory::getDatabase($config);
+		$db = Factory::getDatabase($config);
 
 		// Load the table data
 		try
@@ -79,7 +82,7 @@ class AkeebaModelDbefs extends F0FModel
 	public function get_roots()
 	{
 		// Get database inclusion filters
-		$filters = AEFactory::getFilters();
+		$filters = Factory::getFilters();
 		$database_list = $filters->getInclusions('db');
 
 		$ret = array();
@@ -90,7 +93,7 @@ class AkeebaModelDbefs extends F0FModel
 			if(!empty($definition['port'])) $root.=':'.$definition['port'];
 			$root.='/'.$definition['database'];
 
-			if($name == '[SITEDB]') $root = JText::_('DBFILTER_LABEL_SITEDB');
+			if($name == '[SITEDB]') $root = JText::_('COM_AKEEBA_DBFILTER_LABEL_SITEDB');
 
 			$entry = new stdClass();
 			$entry->value = $name;
@@ -115,9 +118,9 @@ class AkeebaModelDbefs extends F0FModel
 			'newstate'=> false
 		);
 		// Get a reference to the global Filters object
-		$filters = AEFactory::getFilters();
+		$filters = Factory::getFilters();
 		// Get the specific filter object
-		$filter = AEFactory::getFilterObject($filter);
+		$filter = Factory::getFilterObject($filter);
 		// Toggle the filter
 		$success = $filter->toggle($root, $item, $new_status);
 		// Save the data on success
@@ -143,9 +146,9 @@ class AkeebaModelDbefs extends F0FModel
 			'newstate'=> false
 		);
 		// Get a reference to the global Filters object
-		$filters = AEFactory::getFilters();
+		$filters = Factory::getFilters();
 		// Get the specific filter object
-		$filter = AEFactory::getFilterObject($filter);
+		$filter = Factory::getFilterObject($filter);
 		// Toggle the filter
 		$success = $filter->remove($root, $item);
 		// Save the data on success
@@ -171,9 +174,9 @@ class AkeebaModelDbefs extends F0FModel
 			'newstate'=> false
 		);
 		// Get a reference to the global Filters object
-		$filters = AEFactory::getFilters();
+		$filters = Factory::getFilters();
 		// Get the specific filter object
-		$filter = AEFactory::getFilterObject($filter);
+		$filter = Factory::getFilterObject($filter);
 		// Toggle the filter
 		$success = $filter->set($root, $item);
 		// Save the data on success
@@ -199,9 +202,9 @@ class AkeebaModelDbefs extends F0FModel
 			'newstate'=> false
 		);
 		// Get a reference to the global Filters object
-		$filters = AEFactory::getFilters();
+		$filters = Factory::getFilters();
 		// Get the specific filter object
-		$filter = AEFactory::getFilterObject($filter);
+		$filter = Factory::getFilterObject($filter);
 		// Toggle the filter
 		if(!empty($old_item))
 		{
@@ -231,7 +234,7 @@ class AkeebaModelDbefs extends F0FModel
 	public function &get_filters($root)
 	{
 		// A reference to the global Akeeba Engine filter object
-		$filters = AEFactory::getFilters();
+		$filters = Factory::getFilters();
 		// Initialize the return array
 		$ret = array();
 		// Define the known filter types and loop through them
@@ -275,10 +278,10 @@ class AkeebaModelDbefs extends F0FModel
 	public function resetFilters($root)
 	{
 		// Get a reference to the global Filters object
-		$filters = AEFactory::getFilters();
-		$filter = AEFactory::getFilterObject('tables');
+		$filters = Factory::getFilters();
+		$filter = Factory::getFilterObject('tables');
 		$filter->reset($root);
-		$filter = AEFactory::getFilterObject('tabledata');
+		$filter = Factory::getFilterObject('tabledata');
 		$filter->reset($root);
 		$filters->save();
 		return $this->make_listing($root);

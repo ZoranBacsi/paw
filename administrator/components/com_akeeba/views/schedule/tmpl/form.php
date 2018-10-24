@@ -1,7 +1,7 @@
 <?php
 /**
  * @package Akeeba
- * @copyright Copyright (c)2009-2014 Nicholas K. Dionysopoulos
+ * @copyright Copyright (c)2009-2016 Nicholas K. Dionysopoulos
  * @license GNU General Public License version 3, or later
  * @since 3.6.0
  */
@@ -9,7 +9,6 @@
 // Protect from unauthorized access
 defined('_JEXEC') or die();
 
-JHtml::_('behavior.framework');
 ?>
     <ul id="runCheckTabs" class="nav nav-tabs">
         <li>

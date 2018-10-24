@@ -2,13 +2,16 @@
 
 /**
  * @package AkeebaBackup
- * @copyright Copyright (c)2009-2014 Nicholas K. Dionysopoulos
+ * @copyright Copyright (c)2009-2016 Nicholas K. Dionysopoulos
  * @license GNU General Public License version 3, or later
  *
  *
  */
 // Protect from unauthorized access
 defined('_JEXEC') or die();
+
+use Akeeba\Engine\Factory;
+use Akeeba\Engine\Platform;
 
 /**
  * The Backup Administrator class
@@ -41,17 +44,6 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 			case 'default':
 			case 'browse':
 				$session->set('buadmin.task', 'default', 'akeeba');
-				$this->task = 'browse';
-				break;
-
-			case 'restorepoint':
-				if (!AKEEBA_PRO)
-				{
-					JError::raiseError('403', JText::_('AKEEBA_POSTSETUP_NOTAVAILABLEINCORE'));
-					return false;
-				}
-
-				$session->set('buadmin.task', 'restorepoint', 'akeeba');
 				$this->task = 'browse';
 				break;
 
@@ -108,13 +100,13 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 			$session = JFactory::getSession();
 			$task	 = $session->get('buadmin.task', 'browse', 'akeeba');
 
-			$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_ERROR_INVALIDID'), 'error');
+			$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_ERROR_INVALIDID'), 'error');
 			parent::display();
 			return true;
 		}
 
-		$stat			 = AEPlatform::getInstance()->get_statistics($id);
-		$allFilenames	 = AEUtilStatistics::get_all_filenames($stat);
+		$stat			 = Platform::getInstance()->get_statistics($id);
+		$allFilenames	 = Factory::getStatistics()->get_all_filenames($stat);
 
 		// Check single part files
 		if ((count($allFilenames) == 1) && ($part == -1))
@@ -135,7 +127,7 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 			$session = JFactory::getSession();
 			$task	 = $session->get('buadmin.task', 'browse', 'akeeba');
 
-			$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_ERROR_INVALIDDOWNLOAD'), 'error');
+			$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_ERROR_INVALIDDOWNLOAD'), 'error');
 			parent::display();
 			return true;
 		}
@@ -257,7 +249,7 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 
 					if (!$result)
 					{
-						$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_ERROR_INVALIDID'), 'error');
+						$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_ERROR_INVALIDID'), 'error');
 					}
 				}
 			}
@@ -265,7 +257,7 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 			{
 				$session = JFactory::getSession();
 				$task	 = $session->get('buadmin.task', 'browse', 'akeeba');
-				$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_ERROR_INVALIDID'), 'error');
+				$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_ERROR_INVALIDID'), 'error');
 
 				return true;
 			}
@@ -278,14 +270,14 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 
 			if (!$result)
 			{
-				$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_ERROR_INVALIDID'), 'error');
+				$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_ERROR_INVALIDID'), 'error');
 			}
 		}
 
 		$session = JFactory::getSession();
 		$task	 = $session->get('buadmin.task', 'browse', 'akeeba');
 
-		$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_MSG_DELETED'));
+		$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_MSG_DELETED'));
 	}
 
 	/**
@@ -321,13 +313,13 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 					$result = $this->_removeFiles($id);
 					if (!$result)
 					{
-						$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_ERROR_INVALIDID'), 'error');
+						$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_ERROR_INVALIDID'), 'error');
 					}
 				}
 			}
 			else
 			{
-				$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_ERROR_INVALIDID'), 'error');
+				$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_ERROR_INVALIDID'), 'error');
 
 				return true;
 			}
@@ -338,11 +330,11 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 
 			if (!$result)
 			{
-				$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_ERROR_INVALIDID'), 'error');
+				$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_ERROR_INVALIDID'), 'error');
 			}
 		}
 
-		$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_MSG_DELETEDFILE'));
+		$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_MSG_DELETEDFILE'));
 	}
 
 	/**
@@ -357,7 +349,7 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 
 		if ($id <= 0)
 		{
-			$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_ERROR_INVALIDID'), 'error');
+			$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_ERROR_INVALIDID'), 'error');
 			return true;
 		}
 
@@ -379,7 +371,7 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 
 		if ($id <= 0)
 		{
-			$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_ERROR_INVALIDID'), 'error');
+			$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_ERROR_INVALIDID'), 'error');
 
 			return true;
 		}
@@ -405,7 +397,7 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 
 			if ($id <= 0)
 			{
-				$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('STATS_ERROR_INVALIDID'), 'error');
+				$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, JText::_('COM_AKEEBA_BUADMIN_ERROR_INVALIDID'), 'error');
 				$result = false;
 			}
 		}
@@ -428,26 +420,27 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 		$description = $this->input->get('description', '', 'string');
 		$comment	 = $this->input->get('comment', null, 'string', 4);
 
-		$statistic					 = AEPlatform::getInstance()->get_statistics($this->input->get('id', 0, 'int'));
+		$statistic					 = Platform::getInstance()->get_statistics($this->input->get('id', 0, 'int'));
 		$statistic['description']	 = $description;
 		$statistic['comment']		 = $comment;
 
-		AEPlatform::getInstance()->set_or_update_statistics($this->input->get('id', 0, 'int'), $statistic, $self);
+		$dummy = null;
+		Platform::getInstance()->set_or_update_statistics($this->input->get('id', 0, 'int'), $statistic, $dummy);
 
 		if (!$this->getError())
 		{
-			$message = JText::_('STATS_LOG_SAVEDOK');
+			$message = JText::_('COM_AKEEBA_BUADMIN_LOG_SAVEDOK');
 			$type	 = 'message';
 		}
 		else
 		{
-			$message = JText::_('STATS_LOG_SAVEERROR');
+			$message = JText::_('COM_AKEEBA_BUADMIN_LOG_SAVEERROR');
 			$type	 = 'error';
 		}
 
 		$session = JFactory::getSession();
 		$task	 = $session->get('buadmin.task', 'browse', 'akeeba');
-		$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, $message, $type);
+		$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task, $message, $type);
 	}
 
 	public function restore()
@@ -480,7 +473,7 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 			$id	 = null;
 		}
 
-		$url = JURI::base() . 'index.php?option=com_akeeba&view=restore&id=' . $id;
+		$url = JUri::base() . 'index.php?option=com_akeeba&view=restore&id=' . $id;
 		$this->setRedirect($url);
 		$this->redirect();
 
@@ -497,7 +490,15 @@ class AkeebaControllerBuadmin extends AkeebaControllerDefault
 
 		$session = JFactory::getSession();
 		$task	 = $session->get('buadmin.task', 'browse', 'akeeba');
-		$this->setRedirect(JURI::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task);
+		$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin&task=' . $task);
 	}
 
+	public function hidemodal()
+	{
+		/** @var AkeebaModelStatistics $model */
+		$model = $this->getModel('Statistics');
+		$model->hideRestorationInstructionsModal();
+
+		$this->setRedirect(JUri::base() . 'index.php?option=com_akeeba&view=buadmin');
+	}
 }

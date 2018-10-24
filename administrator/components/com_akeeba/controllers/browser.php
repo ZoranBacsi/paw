@@ -1,7 +1,7 @@
 <?php
 /**
  * @package AkeebaBackup
- * @copyright Copyright (c)2009-2014 Nicholas K. Dionysopoulos
+ * @copyright Copyright (c)2009-2016 Nicholas K. Dionysopoulos
  * @license GNU General Public License version 3, or later
  *
  * @since 2.2
@@ -16,7 +16,7 @@ defined('_JEXEC') or die();
  */
 class AkeebaControllerBrowser extends AkeebaControllerDefault
 {
-	public function display($cachable = false, $urlparams = false)
+	public function display($cachable = false, $urlparams = false, $tpl = null)
 	{
 		$folder = $this->input->get('folder', '', 'string');
 		$processfolder = $this->input->get('processfolder', 0, 'int');

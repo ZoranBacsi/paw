@@ -30,7 +30,7 @@ class JConfig {
 	public $ftp_enable = '0';
 	public $offset = 'UTC';
 	public $mailer = 'mail';
-	public $mailfrom = 'broland.karcos@gmail.com';
+	public $mailfrom = 'zoran.heinczinger@gmail.com';
 	public $fromname = 'parkandwash';
 	public $sendmail = '/usr/sbin/sendmail';
 	public $smtpauth = '0';
@@ -53,8 +53,8 @@ class JConfig {
 	public $sef_suffix = '0';
 	public $unicodeslugs = '0';
 	public $feed_limit = '10';
-	public $log_path = '/home/iluvbuda/parkandwash.eu/home/logs';
-	public $tmp_path = '/home/iluvbuda/parkandwash.eu/home/tmp';
+	public $log_path = '/logs';
+	public $tmp_path = '/tmp';
 	public $lifetime = '15';
 	public $session_handler = 'database';
 	public $MetaRights = '';
