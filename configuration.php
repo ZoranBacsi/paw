@@ -12,7 +12,7 @@ class JConfig {
 	public $debug = '0';
 	public $debug_lang = '0';
 	public $dbtype = 'mysqli';
-	public $host = '127.0.0.1';
+	public $host = 'localhost';
 	public $user = 'root';
 	public $password = 'betonzseton';
 	public $db = 'parkandw_site';
@@ -20,10 +20,10 @@ class JConfig {
 	public $live_site = '';
 	public $secret = 'PgF2l9CbBxV4Oftl';
 	public $gzip = '0';
-	public $error_reporting = 'default';
+	public $error_reporting = 'maximum';
 	public $helpurl = 'http://help.joomla.org/proxy/index.php?option=com_help&keyref=Help{major}{minor}:{keyref}';
-	public $ftp_host = '127.0.0.1';
-	public $ftp_port = '21';
+	public $ftp_host = '';
+	public $ftp_port = '';
 	public $ftp_user = '';
 	public $ftp_pass = '';
 	public $ftp_root = '';
@@ -45,7 +45,7 @@ class JConfig {
 	public $MetaDesc = '';
 	public $MetaKeys = '';
 	public $MetaTitle = '1';
-	public $MetaAuthor = '1';
+	public $MetaAuthor = '0';
 	public $MetaVersion = '0';
 	public $robots = '';
 	public $sef = '1';
