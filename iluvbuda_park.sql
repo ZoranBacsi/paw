@@ -78,7 +78,7 @@ CREATE TABLE `park_ak_stats` (
 
 LOCK TABLES `park_ak_stats` WRITE;
 /*!40000 ALTER TABLE `park_ak_stats` DISABLE KEYS */;
-INSERT INTO `park_ak_stats` VALUES (4,'Backup taken on 2015. Február 26. Csütörtök, 12:27','','2015-02-26 11:27:31','2015-02-26 11:31:12','complete','backend','full',1,'site-parkandwash.eu-20150226-122731.zip','/home/iluvbuda/parkandwash.eu/home/administrator/components/com_akeeba/backup/site-parkandwash.eu-20150226-122731.zip',0,'backend','id1',1,NULL,34858476);
+INSERT INTO `park_ak_stats` VALUES (4,'Backup taken on 2015. Február 26. Csütörtök, 12:27','','2015-02-26 11:27:31','2015-02-26 11:31:12','complete','backend','full',1,'site-parkandwash.eu-20150226-122731.zip','/administrator/components/com_akeeba/backup/site-parkandwash.eu-20150226-122731.zip',0,'backend','id1',1,NULL,34858476);
 /*!40000 ALTER TABLE `park_ak_stats` ENABLE KEYS */;
 UNLOCK TABLES;
 
